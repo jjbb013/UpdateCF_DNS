@@ -4,7 +4,7 @@ on:
   workflow_dispatch: # 触发方式，这里手动触发，也可以改为push、pull_request等
 
 jobs:
-  restart_ec2:
+  get_ec2_ip:
     runs-on: ubuntu-latest
     steps:
       - name: Configure AWS credentials
