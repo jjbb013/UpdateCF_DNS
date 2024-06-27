@@ -35,4 +35,4 @@ jobs:
           echo "::set-output name=ip::$INSTANCE_IP"
 
       - name: Output Public IP
-        run: echo "The new public IP is: ${{ steps.get_public_ip.outputs.ip }}"
+        run: echo "The new public IP is ${{ steps.get_public_ip.outputs.ip }}"
