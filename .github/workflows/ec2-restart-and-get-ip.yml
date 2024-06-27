@@ -1,0 +1,38 @@
+name: Restart EC2 and Get Public IP
+
+on:
+  workflow_dispatch: # 触发方式，这里手动触发，也可以改为push、pull_request等
+
+jobs:
+  restart_ec2:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v1
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID_CA }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY_CA }}
+          region: us-west-1 # 根据实际情况替换区域
+
+      - name: Restart EC2 Instance
+        run: |
+          aws ec2 reboot-instances \
+            --instance-ids i-032407fb843e2ee2e \
+            --profile default
+
+      - name: Wait for EC2 to be running
+        uses: jakejarvis/wait-action@master
+        with:
+          time: '30s' # 等待实例重启完成，时间根据实际情况调整
+
+      - name: Get EC2 Public IP
+        id: get_public_ip
+        run: |
+          export INSTANCE_IP=$(aws ec2 describe-instances \
+            --instance-ids i-0123456789abcdef0 \
+            --query 'Reservations[*].Instances[*].[PublicIpAddress]' \
+            --output text)
+          echo "::set-output name=ip::$INSTANCE_IP"
+
+      - name: Output Public IP
+        run: echo "The new public IP is: ${{ steps.get_public_ip.outputs.ip }}"
