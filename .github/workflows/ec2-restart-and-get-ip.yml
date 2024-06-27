@@ -29,7 +29,7 @@ jobs:
         id: get_public_ip
         run: |
           export INSTANCE_IP=$(aws ec2 describe-instances \
-            --instance-ids i-0123456789abcdef0 \
+            --instance-ids i-032407fb843e2ee2e \
             --query 'Reservations[*].Instances[*].[PublicIpAddress]' \
             --output text)
           echo "::set-output name=ip::$INSTANCE_IP"
