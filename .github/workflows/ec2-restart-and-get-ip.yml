@@ -12,7 +12,7 @@ jobs:
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID_CA }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY_CA }}
-          region: us-west-1 # 根据实际情况替换区域
+          aws-region: us-west-1 # 根据实际情况替换区域
 
       - name: Get EC2 Public IP
         id: get_public_ip
