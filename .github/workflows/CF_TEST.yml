@@ -1,13 +1,7 @@
 name: CF DNS UPDATE TEST
 on:
   workflow_dispatch:
-
-env:
-  INSTANCE_ID: i-032407fb843e2ee2e
-  REGION: us-west-1
-  DOMAIN: ca.nets.pp.ua
-  CF_ZONE_ID: b2fc014bf87f67714afb1b9c10941a2e
-
+  
 jobs:
   update_cloudflare-dns:
     runs-on: ubuntu-latest
@@ -16,12 +10,14 @@ jobs:
       env:
         CF_ZONE_ID: ${{ env.CF_ZONE_ID }}
         CF_API_KEY: ${{ secrets.CF_API_KEY }} # 使用从Secrets加载的API密钥
-        DOMAIN: ${{ env.DOMAIN }}
+        DOMAIN: ca.nets.pp.ua
+        Email: will_pan@me.com
+        Key: 15c49068b805a7a078b81b1a3dd9690d8c31d
         NEW_IP: 1.1.1.1
       run: |
         echo "Updating Cloudflare DNS record for $DOMAIN to IP: $NEW_IP"
           curl -X PUT "https://api.cloudflare.com/client/v4/zones/$CF_ZONE_ID/dns_records?name=$DOMAIN&type=A" \
-            -H "X-Auth-Email: will_pan@me.com" \
-            -H "X-Auth-Key: 15c49068b805a7a078b81b1a3dd9690d8c31d" \
+            -H "X-Auth-Email: $Email" \
+            -H "X-Auth-Key: $Key" \
             -H "Content-Type: application/json" \
             --data "{\"type\":\"A\",\"name\":\"$DOMAIN\",\"content\":\"$NEW_IP\",\"ttl\":120}"
