@@ -2,6 +2,7 @@ name: Healthcheck and EC2 Management
 on:
   schedule:
     - cron: '0 */3 * * *' # 每3小时执行一次
+  workflow_dispatch:
 
 env:
   INSTANCE_ID: i-032407fb843e2ee2e
