@@ -1,0 +1,37 @@
+name: Update Cloudflare DNS Record
+
+on:
+  # 触发条件可以根据需求设定，这里以workflow_dispatch为例，代表手动触发
+  workflow_dispatch:
+
+jobs:
+  update_dns_record:
+    runs-on: ubuntu-latest
+    steps:
+    - name: Update DNS Record
+      env:
+        CF_ZONE_ID: b2fc014bf87f67714afb1b9c10941a2e # 从GitHub Secrets中获取Zone ID
+        CF_API_TOKEN: ${{ secrets.CF_API_TOKEN }} # 从GitHub Secrets中获取API Token
+        DNS_NAME: 'ca.nets.pp.ua' # 需要更新的DNS名称
+        DNS_ID: '7a0fec4b7faf16a6dc1f1cefd4a25bea' # DNS记录的ID，需要预先获取
+        NEW_IP: '127.0.0.1' # 新的IP地址
+        PROXIED: 'false' # 是否开启Cloudflare代理，默认否
+      run: |
+        # 构建cURL请求命令
+        UPDATE_CMD=$(echo -n "{\"type\":\"A\",\"name\":\"${{ env.DNS_NAME }}\",\"content\":\"${{ env.NEW_IP }}\",\"proxied\":${{ env.PROXIED }}}")
+        curl -X PUT "https://api.cloudflare.com/client/v4/zones/${{ env.CF_ZONE_ID }}/dns_records/${{ env.DNS_ID }}" \
+          -H "Authorization: Bearer ${{ env.CF_API_TOKEN }}" \
+          -H "Content-Type: application/json" \
+          --data-raw "$UPDATE_CMD"
+
+        # 检查响应状态
+        RESPONSE=$(curl -s -o /dev/null -w "%{http_code}" "https://api.cloudflare.com/client/v4/zones/${{ env.CF_ZONE_ID }}/dns_records/${{ env.DNS_ID }}" \
+          -H "Authorization: Bearer ${{ env.CF_API_TOKEN }}" \
+          -H "Content-Type: application/json")
+
+        if [ "$RESPONSE" -eq 200 ]; then
+          echo "DNS record updated successfully."
+        else
+          echo "Failed to update DNS record. Response code: $RESPONSE"
+          exit 1
+        fi
