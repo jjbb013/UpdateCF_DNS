@@ -76,7 +76,7 @@ jobs:
     - name: Log to Console and Send Bark Notification
       if: always()
       env:
-        BARK_PUSH_URL: 'https://api.day.app/oZaeqGLJzRLSxW7dJqeACn/'
+        BARK_PUSH_URL: 'https://api.day.app/oZaeqGLJzRLSxW7dJqeACn/AWS'
       run: |
         MESSAGE="Status: ${{ steps.ping_check.outputs.pingable }}, IP: ${{ steps.get_new_public_ip.outputs.new_ip }}"
         echo "Logging: $MESSAGE"
