@@ -96,12 +96,3 @@ jobs:
           echo "Failed to update DNS record. Response code: $RESPONSE"
           exit 1
         fi
-    - name: Log to Console and Send Bark Notification
-      if: always()
-      env:
-        BARK_PUSH_URL: 'https://api.day.app/oZaeqGLJzRLSxW7dJqeACn'
-      run: |
-        MESSAGE="Status: ${{ steps.ping_check.outputs.pingable }}, IP: $NEW_IP"
-        echo "Logging: $MESSAGE"
-        # 发送Bark通知，确保BARK_PUSH_URL已替换为实际的URL
-        curl -X POST -H "Content-type: application/json" -d "{\"text\":\"$MESSAGE\"}" $BARK_PUSH_URL
