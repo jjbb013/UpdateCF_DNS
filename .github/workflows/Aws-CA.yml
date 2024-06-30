@@ -1,0 +1,77 @@
+name: Healthcheck and EC2 Management
+on:
+  schedule:
+    - cron: '0 */3 * * *' # 每3小时执行一次
+
+env:
+  INSTANCE_ID: i-032407fb843e2ee2e
+  REGION: us-west-1
+  DOMAIN: ca.nets.pp.ua
+  CF_ZONE_ID: REPLACE_WITH_YOUR_CF_ZONE_ID
+  CF_API_TOKEN: ${{ secrets.CF_API_TOKEN }}
+
+jobs:
+  healthcheck_and_manage_ec2:
+    runs-on: ubuntu-latest
+    steps:
+    - name: Check Connectivity
+      id: ping_check
+      run: |
+        PING_OUTPUT=$(curl -sL https://v2.api-m.com/api/tcping?address=ca.nets.pp.ua&port=1081)
+        if [[ $PING_OUTPUT == *"200"* ]]; then
+          echo "Domain is pingable at $(date)"
+          echo "::set-output name=pingable::true"
+        else
+          echo "Domain is NOT pingable at $(date)"
+          echo "::set-output name=pingable::false"
+        fi
+
+    - name: Manage EC2
+      if: steps.ping_check.outputs.pingable == 'false'
+      env:
+        AWS_REGION: ${{ env.REGION }}
+        INSTANCE_ID: ${{ env.INSTANCE_ID }}
+      run: |
+        echo "Stopping EC2 instance..."
+        aws ec2 stop-instances --instance-ids $INSTANCE_ID --region $AWS_REGION
+        echo "Waiting for instance to stop..."
+        aws ec2 wait instance-stopped --instance-ids $INSTANCE_ID --region $AWS_REGION
+        echo "Starting EC2 instance..."
+        aws ec2 start-instances --instance-ids $INSTANCE_ID --region $AWS_REGION
+        echo "Waiting for instance to start..."
+        aws ec2 wait instance-running --instance-ids $INSTANCE_ID --region $AWS_REGION
+        echo "Instance restarted."
+
+    - name: Get New Public IP
+      if: steps.ping_check.outputs.pingable == 'false'
+      env:
+        AWS_REGION: ${{ env.REGION }}
+        INSTANCE_ID: ${{ env.INSTANCE_ID }}
+      run: |
+        NEW_IP=$(aws ec2 describe-instances --instance-ids $INSTANCE_ID --region $AWS_REGION --query 'Reservations[0].Instances[0].PublicIpAddress' --output text)
+        echo "New Public IP: $NEW_IP"
+        echo "::set-output name=new_ip::$NEW_IP"
+
+    - name: Update Cloudflare DNS
+      if: steps.ping_check.outputs.pingable == 'false' && steps.get_new_public_ip.outputs.new_ip != ''
+      env:
+        CF_ZONE_ID: ${{ env.CF_ZONE_ID }}
+        CF_API_TOKEN: ${{ env.CF_API_TOKEN }}
+        DOMAIN: ${{ env.DOMAIN }}
+        NEW_IP: ${{ steps.get_new_public_ip.outputs.new_ip }}
+      run: |
+        echo "Updating Cloudflare DNS record for $DOMAIN to IP: $NEW_IP"
+        curl -X PUT "https://api.cloudflare.com/client/v4/zones/$CF_ZONE_ID/dns_records?name=$DOMAIN&type=A" \
+         -H "Authorization: Bearer $CF_API_TOKEN" \
+         -H "Content-Type: application/json" \
+         --data "{\"type\":\"A\",\"name\":\"$DOMAIN\",\"content\":\"$NEW_IP\",\"ttl\":120}"
+
+    - name: Log to Console and Send Bark Notification
+      if: always()
+      env:
+        BARK_PUSH_URL: 'https://api.day.app/oZaeqGLJzRLSxW7dJqeACn/'
+      run: |
+        MESSAGE="Status: ${{ steps.ping_check.outputs.pingable }}, IP: ${{ steps.get_new_public_ip.outputs.new_ip }}"
+        echo "Logging: $MESSAGE"
+        # 发送Bark通知，确保BARK_PUSH_URL已替换为实际的URL
+        curl -X POST -H "Content-type: application/json" -d "{\"text\":\"$MESSAGE\"}" $BARK_PUSH_URL
