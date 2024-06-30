@@ -13,7 +13,6 @@ jobs:
     runs-on: ubuntu-latest
     steps:
     - name: Update Cloudflare DNS
-      if: steps.ping_check.outputs.pingable == 'false' && steps.get_new_public_ip.outputs.new_ip != ''
       env:
         CF_ZONE_ID: ${{ env.CF_ZONE_ID }}
         CF_API_KEY: ${{ secrets.CF_API_KEY }} # 使用从Secrets加载的API密钥
