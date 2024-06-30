@@ -21,6 +21,7 @@ jobs:
       run: |
         echo "Updating Cloudflare DNS record for $DOMAIN to IP: $NEW_IP"
           curl -X PUT "https://api.cloudflare.com/client/v4/zones/$CF_ZONE_ID/dns_records?name=$DOMAIN&type=A" \
-            -H "Authorization: Bearer $CF_API_KEY" \
+            -H "X-Auth-Email: will_pan@me.com" \
+            -H "X-Auth-Key: 15c49068b805a7a078b81b1a3dd9690d8c31d" \
             -H "Content-Type: application/json" \
             --data "{\"type\":\"A\",\"name\":\"$DOMAIN\",\"content\":\"$NEW_IP\",\"ttl\":120}"
