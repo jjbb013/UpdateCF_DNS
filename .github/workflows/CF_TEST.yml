@@ -12,7 +12,6 @@ jobs:
         CF_ZONE_ID: b2fc014bf87f67714afb1b9c10941a2e # 从Secrets获取Zone ID
         CF_API_TOKEN: ${{ secrets.CF_API_TOKEN }} # 从Secrets获取API Token
         DNS_NAME: 'ca.nets.pp.ua' # 需要查询的DNS名称
-        DNS_ID: 'RECORD_ID_HERE' # DNS记录的ID，需要预先获取
         NEW_IP: '127.0.0.1' # 新的IP地址
         PROXIED: 'false' # 是否开启Cloudflare代理，默认否
       run: |
@@ -22,13 +21,13 @@ jobs:
           -H "Content-Type: application/json")
 
         # 解析响应并提取记录ID
-        RECORD_ID=$(echo "${RECORD_ID}" | jq -r '.result[] | select(.name == "'${{ env.DNS_NAME }}'") | .id')
+        DNS_ID=$(echo "${RECORD_ID}" | jq -r '.result[] | select(.name == "'${{ env.DNS_NAME }}'") | .id')
 
-        if [ -z "$RECORD_ID" ]; then
+        if [ -z "$DNS_ID" ]; then
           echo "No DNS record found for ${{ env.DNS_NAME }}"
           exit 1
         else
-          echo "Record ID for ${{ env.DNS_NAME }}: $RECORD_ID"
+          echo "DNS ID for ${{ env.DNS_NAME }}: $DNS_ID"
         fi
     - name: Update DNS Record
       run: |
