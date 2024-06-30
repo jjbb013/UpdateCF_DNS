@@ -12,6 +12,9 @@ jobs:
         CF_ZONE_ID: b2fc014bf87f67714afb1b9c10941a2e # 从Secrets获取Zone ID
         CF_API_TOKEN: ${{ secrets.CF_API_TOKEN }} # 从Secrets获取API Token
         DNS_NAME: 'ca.nets.pp.ua' # 需要查询的DNS名称
+        DNS_ID: 'RECORD_ID_HERE' # DNS记录的ID，需要预先获取
+        NEW_IP: '127.0.0.1' # 新的IP地址
+        PROXIED: 'false' # 是否开启Cloudflare代理，默认否
       run: |
         # 使用cURL调用Cloudflare API获取DNS记录ID
         RECORD_ID=$(curl -s -X GET "https://api.cloudflare.com/client/v4/zones/${{ env.CF_ZONE_ID }}/dns_records?name=${{ env.DNS_NAME }}" \
@@ -26,4 +29,24 @@ jobs:
           exit 1
         else
           echo "Record ID for ${{ env.DNS_NAME }}: $RECORD_ID"
+        fi
+    - name: Update DNS Record
+      run: |
+        # 构建cURL请求命令
+        UPDATE_CMD=$(echo -n "{\"type\":\"A\",\"name\":\"${{ env.DNS_NAME }}\",\"content\":\"${{ env.NEW_IP }}\",\"proxied\":${{ env.PROXIED }}}")
+        curl -X PUT "https://api.cloudflare.com/client/v4/zones/${{ env.CF_ZONE_ID }}/dns_records/${{ env.DNS_ID }}" \
+          -H "Authorization: Bearer ${{ env.CF_API_TOKEN }}" \
+          -H "Content-Type: application/json" \
+          --data-raw "$UPDATE_CMD"
+
+        # 检查响应状态
+        RESPONSE=$(curl -s -o /dev/null -w "%{http_code}" "https://api.cloudflare.com/client/v4/zones/${{ env.CF_ZONE_ID }}/dns_records/${{ env.DNS_ID }}" \
+          -H "Authorization: Bearer ${{ env.CF_API_TOKEN }}" \
+          -H "Content-Type: application/json")
+
+        if [ "$RESPONSE" -eq 200 ]; then
+          echo "DNS record updated successfully."
+        else
+          echo "Failed to update DNS record. Response code: $RESPONSE"
+          exit 1
         fi
