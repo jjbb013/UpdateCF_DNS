@@ -57,10 +57,10 @@ jobs:
       run: |
         NEW_IP=$(aws ec2 describe-instances --instance-ids $INSTANCE_ID --region $AWS_REGION --query 'Reservations[0].Instances[0].PublicIpAddress' --output text)
         echo "New Public IP: $NEW_IP"
-        echo "{new_ip}={$NEW_IP}" >> $GITHUB_OUTPUT
+        echo "NEW_IP=$NEW_IP" >> $GITHUB_ENV
 
     - name: Update Cloudflare DNS
-      if: steps.ping_check.outputs.pingable == 'false' && steps.get_new_public_ip.outputs.new_ip != ''
+      if: steps.ping_check.outputs.pingable == 'false' && ${{ env.NEW_IP }} != ''
       env:
         CF_ZONE_ID: ${{ env.CF_ZONE_ID }}
         CF_API_TOKEN: ${{ env.CF_API_TOKEN }}
