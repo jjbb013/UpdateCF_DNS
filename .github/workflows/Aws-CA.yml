@@ -8,13 +8,19 @@ env:
   INSTANCE_ID: i-032407fb843e2ee2e
   REGION: us-west-1
   DOMAIN: ca.nets.pp.ua
-  CF_ZONE_ID: REPLACE_WITH_YOUR_CF_ZONE_ID
-  CF_API_TOKEN: ${{ secrets.CF_API_TOKEN }}
+  CF_ZONE_ID: b2fc014bf87f67714afb1b9c10941a2e
 
 jobs:
   healthcheck_and_manage_ec2:
     runs-on: ubuntu-latest
     steps:
+    - name: Configure AWS Credentials
+      uses: aws-actions/configure-aws-credentials@v1
+      with:
+        aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID_CA }}
+        aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY_CA }}
+        aws-region: ${{ env.REGION }}
+
     - name: Check Connectivity
       id: ping_check
       run: |
