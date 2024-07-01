@@ -2,7 +2,7 @@ name: TCPing Check with Bark Notification
 
 on:
   schedule:
-    - cron: '0 * * * *'  # 每小时执行一次
+    - cron: '6 * * * *'  # 每小时执行一次
   workflow_dispatch:
 
 jobs:
@@ -35,7 +35,7 @@ jobs:
 
         # 构建通知消息
         title="域名检查报告 $(date +'%Y-%m-%d %H:%M:%S')"
-        content="可达域名:\n${success_domains[*]} 不可达域名:\n${failed_domains[*]}"
+        content="可达域名:\n${success_domains[*]} \n不可达域名:\n${failed_domains[*]}"
 
         # 发送Bark通知
         curl -X POST -H 'Content-Type: application/json' -d "{\"title\":\"$title\",\"body\":\"$content\"}" "$BARK_URL"
