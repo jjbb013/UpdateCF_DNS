@@ -3,7 +3,8 @@ name: GCP HK Check Connectivity and Update DNS
 on:
   schedule:
     - cron: '0 */3 * * *' # 每3小时运行一次
-
+  workflow_dispatch:
+  
 jobs:
   check_ping_and_update_dns:
     runs-on: ubuntu-latest
