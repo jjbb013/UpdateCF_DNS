@@ -5,7 +5,7 @@ on:
   workflow_dispatch:
 
 env:
-  INSTANCE_ID: 'i-032407fb843e2ee2e'
+  INSTANCE_ID: i-032407fb843e2ee2e
   REGION: us-west-1
   DOMAIN: 'ca.nets.pp.ua' # 需要查询的DNS名称
   CF_ZONE_ID: b2fc014bf87f67714afb1b9c10941a2e
@@ -41,7 +41,7 @@ jobs:
       if: steps.ping_check.outputs.pingable == 'false'
       env:
         AWS_REGION: ${{ env.REGION }}
-        INSTANCE_ID: ${{ env.INSTANCE_ID }}
+        INSTANCE_ID: ${{env.INSTANCE_ID}}
       run: |
         echo "Stopping EC2 instance..."
         aws ec2 stop-instances --instance-ids $INSTANCE_ID --region $AWS_REGION
