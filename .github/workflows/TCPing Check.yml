@@ -24,3 +24,4 @@ jobs:
           else
             echo "$domain is NOT pingable at $(date)"
           fi
+        done
