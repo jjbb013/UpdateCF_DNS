@@ -19,9 +19,23 @@ jobs:
           # 对每个域名执行TCPing检查
           API_URL="https://v2.api-m.com/api/tcping?address=${domain}&port=1081"
           response=$(curl -sL $API_URL)
+          echo $response
           if [[ $response == *"200"* ]]; then
-            echo "$domain is pingable at $(date)"
+            success_domains+=("$domain")
           else
-            echo "$domain is NOT pingable at $(date)"
+            failed_domains+=("$domain")
           fi
         done
+
+        # 构建通知消息
+        title="域名检查报告 $(date +'%Y-%m-%d %H:%M:%S')"
+        if [ ${#failed_domains[@]} -gt 0 ]; then
+          content="不可达域名:\n${failed_domains[*]}"
+        elif [ ${#success_domains[@]} -gt 0 ]; then
+          content="可达域名:\n${success_domains[*]}"
+        else
+          content="所有检查的域名均无响应。"
+        fi
+
+        # 发送Bark通知
+        curl -X POST -H 'Content-Type: application/json' -d "{\"title\":\"$title\",\"body\":\"$content\"}" "$BARK_URL"
