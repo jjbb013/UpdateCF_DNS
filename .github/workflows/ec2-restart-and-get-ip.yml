@@ -1,8 +1,15 @@
-name: Restart EC2 and Get Public IP
+name: Get Public IP
 
 on:
   workflow_dispatch: # 触发方式，这里手动触发，也可以改为push、pull_request等
-
+env:
+  INSTANCE_ID: i-032407fb843e2ee2e
+  REGION: us-west-1
+  DOMAIN: 'ca.nets.pp.ua' # 需要查询的DNS名称
+  CF_ZONE_ID: b2fc014bf87f67714afb1b9c10941a2e
+  CF_API_TOKEN: ${{ secrets.CF_API_TOKEN }} # 从GitHub Secrets中获取API Token
+  PROXIED: 'false' # 是否开启Cloudflare代理，默认否
+  
 jobs:
   get_ec2_ip:
     runs-on: ubuntu-latest
@@ -16,9 +23,12 @@ jobs:
 
       - name: Get EC2 Public IP
         id: get_public_ip
+        env:
+          AWS_REGION: ${{ env.REGION }}
+          INSTANCE_ID: ${{ env.INSTANCE_ID }}
         run: |
           export INSTANCE_IP=$(aws ec2 describe-instances \
-            --instance-ids i-032407fb843e2ee2e \
+            --instance-ids $INSTANCE_ID \
             --query 'Reservations[*].Instances[*].[PublicIpAddress]' \
             --output text)
           echo "::set-output name=ip::$INSTANCE_IP"
