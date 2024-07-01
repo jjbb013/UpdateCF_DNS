@@ -5,7 +5,7 @@ on:
   workflow_dispatch:
 
 env:
-  INSTANCE_ID: i-0e847507a4ed7e836
+  INSTANCE_ID: i-0e847507a4ed7e8360
   REGION: ap-northeast-1
   DOMAIN: 'tokyo.onemorething.pp.ua' # 需要查询的DNS名称
   CF_ZONE_ID: 1fa9774064820f53fe1733e37a19f721
@@ -27,6 +27,7 @@ jobs:
       id: ping_check
       run: |
         PING_OUTPUT=$(curl -sL https://v2.api-m.com/api/tcping?address=${{ env.DOMAIN }}&port=1081)
+        echo PING_OUTPUT
         if [[ $PING_OUTPUT == *"200"* ]]; then
           echo "Domain is pingable at $(date)"
           echo "::set-output name=pingable::true"
