@@ -1,0 +1,102 @@
+name: AWS Sydney Healthcheck and EC2 Management
+on:
+  schedule:
+    - cron: '0 */3 * * *' # 每3小时执行一次
+  workflow_dispatch:
+
+env:
+  INSTANCE_ID: i-0f0bb12dd41a6a754
+  REGION: ap-southeast-2
+  DOMAIN: 'sydney.nets.pp.ua' # 需要查询的DNS名称
+  CF_ZONE_ID: b2fc014bf87f67714afb1b9c10941a2e
+  CF_API_TOKEN: ${{ secrets.CF_API_TOKEN }} # 从GitHub Secrets中获取API Token
+  PROXIED: 'false' # 是否开启Cloudflare代理，默认否
+
+jobs:
+  healthcheck_and_manage_ec2:
+    runs-on: ubuntu-latest
+    steps:
+    - name: Configure AWS Credentials
+      uses: aws-actions/configure-aws-credentials@v1
+      with:
+        aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID_Tokyo }}
+        aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY_Tokyo }}
+        aws-region: ${{ env.REGION }}
+
+    - name: Check Connectivity
+      id: ping_check
+      run: |
+        API_URL="https://v2.api-m.com/api/tcping?address=${{env.DOMAIN}}&port=1081"
+        response=$(curl -sL $API_URL)
+        echo ${{ env.DOMAIN }} $response
+        if [[ $response == *"200"* ]]; then
+          echo "Domain is pingable at $(date)"
+          echo "::set-output name=pingable::true"
+        else
+          echo "Domain is NOT pingable at $(date)"
+          echo "::set-output name=pingable::false"
+        fi
+
+    - name: Manage EC2
+      if: steps.ping_check.outputs.pingable == 'false'
+      env:
+        AWS_REGION: ${{ env.REGION }}
+        INSTANCE_ID: ${{ env.INSTANCE_ID }}
+      run: |
+        echo "Stopping EC2 instance..."
+        aws ec2 stop-instances --instance-ids $INSTANCE_ID --region $AWS_REGION
+        echo "Waiting for instance to stop..."
+        aws ec2 wait instance-stopped --instance-ids $INSTANCE_ID --region $AWS_REGION
+        echo "Starting EC2 instance..."
+        aws ec2 start-instances --instance-ids $INSTANCE_ID --region $AWS_REGION
+        echo "Waiting for instance to start..."
+        aws ec2 wait instance-running --instance-ids $INSTANCE_ID --region $AWS_REGION
+        echo "Instance restarted."
+
+    - name: Get New Public IP
+      if: steps.ping_check.outputs.pingable == 'false'
+      env:
+        AWS_REGION: ${{ env.REGION }}
+        INSTANCE_ID: ${{ env.INSTANCE_ID }}
+      run: |
+        NEW_IP=$(aws ec2 describe-instances --instance-ids $INSTANCE_ID --region $AWS_REGION --query 'Reservations[0].Instances[0].PublicIpAddress' --output text)
+        echo "New Public IP: $NEW_IP"
+        echo "NEW_IP=$NEW_IP" >> $GITHUB_ENV
+
+    - name: Get Cloudflare DNS Record ID
+      if: steps.ping_check.outputs.pingable == 'false'
+      run: |
+        # 使用cURL调用Cloudflare API获取DNS记录ID
+        DNS_RECORDS=$(curl -s -X GET "https://api.cloudflare.com/client/v4/zones/${{ env.CF_ZONE_ID }}/dns_records?name=${{ env.DOMAIN }}" \
+          -H "Authorization: Bearer ${{ env.CF_API_TOKEN }}" \
+          -H "Content-Type: application/json")
+        DNS_ID=$(echo "${DNS_RECORDS}" | jq -r '.result[] | select(.name == "'${{ env.DOMAIN }}'") | .id')
+        if [ -z "$DNS_ID" ]; then
+          echo "No DNS record found for ${{ env.DOMAIN }}"
+          exit 1
+        else
+          echo "DNS Record ID for ${{ env.DOMAIN }}: $DNS_ID"
+          echo "DNS_ID=$DNS_ID" >> $GITHUB_ENV
+        fi
+
+    - name: Update DNS Record
+      if: steps.ping_check.outputs.pingable == 'false'
+      run: |
+        # 构建cURL请求命令，使用先前获取到的DNS_ID
+        UPDATE_CMD=$(echo -n "{\"type\":\"A\",\"name\":\"${{ env.DOMAIN }}\",\"content\":\"$NEW_IP\",\"proxied\":${{ env.PROXIED }}}")
+        curl -X PUT "https://api.cloudflare.com/client/v4/zones/${{ env.CF_ZONE_ID }}/dns_records/${{ env.DNS_ID }}" \
+          -H "Authorization: Bearer ${{ env.CF_API_TOKEN }}" \
+          -H "Content-Type: application/json" \
+          --data-raw "$UPDATE_CMD"
+
+        # 检查响应状态
+        RESPONSE=$(curl -s -o /dev/null -w "%{http_code}" "https://api.cloudflare.com/client/v4/zones/${{ env.CF_ZONE_ID }}/dns_records/${{ env.DNS_ID }}" \
+          -H "Authorization: Bearer ${{ env.CF_API_TOKEN }}" \
+          -H "Content-Type: application/json")
+
+        if [ "$RESPONSE" -eq 200 ]; then
+          echo "DNS record updated successfully."
+        else
+          echo "Failed to update DNS record. Response code: $RESPONSE"
+          exit 1
+        fi
