@@ -19,6 +19,7 @@ jobs:
         for domain in "${ADDR[@]}"; do
           # 对每个域名执行TCPing检查
           API_URL="https://v2.api-m.com/api/tcping?address=${domain}&port=1081"
+          echo "$API_URL"
           if [[ $API_URL == *"200"* ]]; then
             echo "$domain is pingable at $(date)"
           else
