@@ -1,7 +1,6 @@
 name: TCPing Check
 
 on:
-  # 您可以根据需要修改触发条件，例如使用 `schedule` 进行定时检查
   schedule:
     - cron: '0 * * * *'  # 每小时执行一次，根据需要调整
   workflow_dispatch:
@@ -18,9 +17,9 @@ jobs:
         IFS=',' read -ra ADDR <<< "$DOMAINS"
         for domain in "${ADDR[@]}"; do
           # 对每个域名执行TCPing检查
-          API_URL=$(curl -sL https://v2.api-m.com/api/tcping?address=${domain}&port=1081)
-          echo "$API_URL"
-          if [[ $API_URL == *"200"* ]]; then
+          API_URL="https://v2.api-m.com/api/tcping?address=${domain}&port=1081"
+          response=$(curl -s -o /dev/null -w "%{http_code}" "$API_URL")
+          if [[ $response == *"200"* ]]; then
             echo "$domain is pingable at $(date)"
           else
             echo "$domain is NOT pingable at $(date)"
