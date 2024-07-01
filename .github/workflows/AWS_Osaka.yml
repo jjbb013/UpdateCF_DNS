@@ -26,7 +26,7 @@ jobs:
     - name: Check Connectivity
       id: ping_check
       run: |
-        API_URL="https://v2.api-m.com/api/tcping?address=${env.DOMAIN}&port=1081"
+        API_URL="https://v2.api-m.com/api/tcping?address=${{env.DOMAIN}}&port=1081"
         response=$(curl -sL $API_URL)
         echo ${{ env.DOMAIN }} $response
         if [[ $response == *"200"* ]]; then
