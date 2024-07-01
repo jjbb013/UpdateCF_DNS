@@ -5,7 +5,7 @@ on:
   workflow_dispatch:
 
 env:
-  INSTANCE_ID: i-032407fb843e2ee2e
+  INSTANCE_ID: 'i-032407fb843e2ee2e'
   REGION: us-west-1
   DOMAIN: 'ca.nets.pp.ua' # 需要查询的DNS名称
   CF_ZONE_ID: b2fc014bf87f67714afb1b9c10941a2e
