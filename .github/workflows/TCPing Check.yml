@@ -25,7 +25,7 @@ jobs:
           # 对每个域名执行TCPing检查
           API_URL="https://v2.api-m.com/api/tcping?address=${domain}&port=1081"
           response=$(curl -sL $API_URL)
-          echo $response
+          echo "$domain $response"
           if [[ $response == *"200"* ]]; then
             success_domains+=("$domain")
           else
