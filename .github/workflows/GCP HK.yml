@@ -59,7 +59,7 @@ jobs:
       run: |
         # 使用Cloudflare API更新DNS记录
         curl -X PUT "https://api.cloudflare.com/client/v4/zones/${{ env.CLOUDFLARE_ZONE_ID }}/dns_records" \
-          -H "Authorization: Bearer ${{ secrets.CLOUDFLARE_API_TOKEN }}" \
+          -H "Authorization: Bearer ${{ secrets.CF_API_TOKEN }}" \
           -H "Content-Type: application/json" \
           --data "{\"type\":\"A\",\"name\":\"${{ env.CLOUDFLARE_DOMAIN }}\",\"content\":\"${{ env.INSTANCE_IP }}\",\"ttl\":120}" \
           --fail
