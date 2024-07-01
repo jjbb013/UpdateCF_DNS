@@ -19,8 +19,8 @@ jobs:
     - name: Configure AWS Credentials
       uses: aws-actions/configure-aws-credentials@v1
       with:
-        aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID_Osaka }}
-        aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY_Osaka }}
+        aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID_Tokyo }}
+        aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY_Tokyo }}
         aws-region: ${{ env.REGION }}
 
     - name: Check Connectivity
@@ -64,6 +64,7 @@ jobs:
         echo "NEW_IP=$NEW_IP" >> $GITHUB_ENV
 
     - name: Get Cloudflare DNS Record ID
+      if: steps.ping_check.outputs.pingable == 'false'
       run: |
         # 使用cURL调用Cloudflare API获取DNS记录ID
         DNS_RECORDS=$(curl -s -X GET "https://api.cloudflare.com/client/v4/zones/${{ env.CF_ZONE_ID }}/dns_records?name=${{ env.DOMAIN }}" \
@@ -79,6 +80,7 @@ jobs:
         fi
 
     - name: Update DNS Record
+      if: steps.ping_check.outputs.pingable == 'false'
       run: |
         # 构建cURL请求命令，使用先前获取到的DNS_ID
         UPDATE_CMD=$(echo -n "{\"type\":\"A\",\"name\":\"${{ env.DOMAIN }}\",\"content\":\"$NEW_IP\",\"proxied\":${{ env.PROXIED }}}")
