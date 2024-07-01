@@ -1,45 +1,29 @@
-name: TCPing Check with Bark Notification
+name: TCPing Check
 
 on:
+  # 您可以根据需要修改触发条件，例如使用 `schedule` 进行定时检查
   schedule:
-    - cron: '0 * * * *'  # 每小时执行一次
+    - cron: '0 * * * *'  # 每小时执行一次，根据需要调整
   workflow_dispatch:
 
 jobs:
-  tcping_and_notify:
+  tcping:
     runs-on: ubuntu-latest
     steps:
-    - name: Checkout Repository
-      uses: actions/checkout@v2
-
-    - name: TCPing Check and Notify
+    - name: TCPing Check
       env:
         DOMAINS: 'hk.nets.pp.ua,tw.nets.pp.ua,kr.nets.pp.ua,melbourne.nets.pp.ua,sydney.nets.pp.ua,ca.nets.pp.ua,osaka.onemorething.pp.ua,tokyo.onemorething.pp.ua,oregon.onemorething.pp.ua'
-        BARK_URL: 'https://api.day.app/oZaeqGLJzRLSxW7dJqeACn/'
       run: |
+        # 将域名列表分割成数组
         IFS=',' read -ra ADDR <<< "$DOMAINS"
-        success_domains=()
-        failed_domains=()
-
         for domain in "${ADDR[@]}"; do
+          # 对每个域名执行TCPing检查
           API_URL="https://v2.api-m.com/api/tcping?address=${domain}&port=1081"
           response=$(curl --silent --write-out %{http_code} --output /dev/null "$API_URL")
+          echo "Checking domain: $domain"
           if [ "$response" -eq 200 ]; then
-            success_domains+=("$domain")
+            echo "Domain $domain is reachable."
           else
-            failed_domains+=("$domain")
+            echo "Error checking domain $domain. Response code: $response"
           fi
         done
-
-        # 构建通知消息
-        title="域名检查报告 $(date +'%Y-%m-%d %H:%M:%S')"
-        if [ ${#failed_domains[@]} -gt 0 ]; then
-          content="不可达域名:\n${failed_domains[*]}"
-        elif [ ${#success_domains[@]} -gt 0 ]; then
-          content="可达域名:\n${success_domains[*]}"
-        else
-          content="所有检查的域名均无响应。"
-        fi
-
-        # 发送Bark通知
-        curl -X POST -H 'Content-Type: application/json' -d "{\"title\":\"$title\",\"body\":\"$content\"}" "$BARK_URL"
