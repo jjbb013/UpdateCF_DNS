@@ -5,7 +5,7 @@ on:
   workflow_dispatch:
 
 env:
-  INSTANCE_ID: i-0e847507a4ed7e8360
+  INSTANCE_ID: i-0e847507a4ed7e836
   REGION: ap-northeast-1
   DOMAIN: 'tokyo.onemorething.pp.ua' # 需要查询的DNS名称
   CF_ZONE_ID: 1fa9774064820f53fe1733e37a19f721
@@ -64,6 +64,7 @@ jobs:
         echo "NEW_IP=$NEW_IP" >> $GITHUB_ENV
 
     - name: Get Cloudflare DNS Record ID
+      if: steps.ping_check.outputs.pingable == 'false'
       run: |
         # 使用cURL调用Cloudflare API获取DNS记录ID
         DNS_RECORDS=$(curl -s -X GET "https://api.cloudflare.com/client/v4/zones/${{ env.CF_ZONE_ID }}/dns_records?name=${{ env.DOMAIN }}" \
@@ -79,6 +80,7 @@ jobs:
         fi
 
     - name: Update DNS Record
+      if: steps.ping_check.outputs.pingable == 'false'
       run: |
         # 构建cURL请求命令，使用先前获取到的DNS_ID
         UPDATE_CMD=$(echo -n "{\"type\":\"A\",\"name\":\"${{ env.DOMAIN }}\",\"content\":\"$NEW_IP\",\"proxied\":${{ env.PROXIED }}}")
