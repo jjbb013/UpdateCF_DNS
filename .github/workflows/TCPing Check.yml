@@ -1,20 +1,26 @@
-name: TCPing Check
+name: TCPing Check with Bark Notification
 
 on:
   schedule:
-    - cron: '0 * * * *'  # 每小时执行一次，根据需要调整
+    - cron: '0 * * * *'  # 每小时执行一次
   workflow_dispatch:
 
 jobs:
-  tcping:
+  tcping_and_notify:
     runs-on: ubuntu-latest
     steps:
-    - name: TCPing Check
+    - name: Checkout Repository
+      uses: actions/checkout@v2
+
+    - name: TCPing Check and Notify
       env:
         DOMAINS: 'hk.nets.pp.ua,tw.nets.pp.ua,kr.nets.pp.ua,melbourne.nets.pp.ua,sydney.nets.pp.ua,ca.nets.pp.ua,osaka.onemorething.pp.ua,tokyo.onemorething.pp.ua,oregon.onemorething.pp.ua'
+        BARK_URL: 'https://api.day.app/oZaeqGLJzRLSxW7dJqeACn/'
       run: |
         # 将域名列表分割成数组
         IFS=',' read -ra ADDR <<< "$DOMAINS"
+        success_domains=()
+        failed_domains=()
         for domain in "${ADDR[@]}"; do
           # 对每个域名执行TCPing检查
           API_URL="https://v2.api-m.com/api/tcping?address=${domain}&port=1081"
