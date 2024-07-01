@@ -4,85 +4,77 @@ on:
   schedule:
     - cron: '0 */3 * * *' # 每3小时运行一次
   workflow_dispatch:
-  
+
 jobs:
-  check_ping_and_update_dns:
+  monitor_dns:
     runs-on: ubuntu-latest
     env:
-      INSTANCE_ZONE: asia-east2-a
-      INSTANCE_NAME: instance-hk
-      DOMAIN_TO_PING: hk.nets.pp.ua
-      PORT: 1081
-      CLOUDFLARE_DOMAIN: hk.nets.pp.ua
-      CLOUDFLARE_ZONE_ID: ${{ secrets.CLOUDFLARE_ZONE_ID }}
+      TARGET_DOMAIN: 'hk.nets.pp.ua'
+      TARGET_PORT: 1081
+      GCP_VM_ZONE: 'asia-east2-a'
+      GCP_VM_NAME: 'instance-hk'
+      CLOUDFLARE_DOMAIN: 'hk.nets.pp.ua'
+      CLOUDFLARE_ZONE_ID: b2fc014bf87f67714afb1b9c10941a2e
       GCP_SA_KEY: ${{ secrets.GCP_SA_KEY }}
 
     steps:
-    - name: Check Connectivity
-      id: ping_check
+    - name: Check Domain Connectivity
+      id: check-connectivity
       run: |
-        PING_OUTPUT=$(curl -sL https://v2.api-m.com/api/tcping?address=${{ env.DOMAIN_TO_PING }}&port=${{ env.PORT }})
-        if [[ $PING_OUTPUT == *"200"* ]]; then
-          echo "Domain ${{ env.DOMAIN_TO_PING }} is pingable at $(date)"
-          echo "::set-output name=pingable::true"
+        # 使用curl获取ping结果
+        ping_result=$(curl -sL -w '%{http_code}' -o /dev/null https://v2.api-m.com/api/tcping?address=${{ env.TARGET_DOMAIN }}&port=${{ env.TARGET_PORT }})
+        echo "Ping Result: $ping_result"
+        if [ "$ping_result" -eq 200 ]; then
+          echo "Domain is reachable."
+          echo "REACHABLE=true" >> $GITHUB_ENV
         else
-          echo "Domain ${{ env.DOMAIN_TO_PING }} is NOT pingable at $(date)"
-          echo "::set-output name=pingable::false"
+          echo "Domain is unreachable."
+          echo "REACHABLE=false" >> $GITHUB_ENV
         fi
 
-    - name: Stop GCP VM if Not Pingable
-      if: steps.ping_check.outputs.pingable == 'false'
+    - name: Handle Unreachable Domain
+      if: env.REACHABLE == 'false'
       env:
-        GCP_PROJECT: YOUR_GCP_PROJECT # 替换为您的GCP项目ID
+        GCP_PROJECT_ID: conductive-fold-417113
       run: |
-        echo "${{ env.GCP_SA_KEY }}" > key.json
-        gcloud auth activate-service-account --key-file key.json
-        gcloud config set project ${{ env.GCP_PROJECT }}
-        gcloud compute instances stop ${{ env.INSTANCE_NAME }} --zone ${{ env.INSTANCE_ZONE }}
+        echo "${{ env.GCP_SA_KEY }}" | base64 --decode > sa-key.json
+        gcloud auth activate-service-account --key-file sa-key.json --project ${{ env.GCP_PROJECT_ID }}
+        gcloud compute instances stop ${{ env.GCP_VM_NAME }} --zone ${{ env.GCP_VM_ZONE }}
 
-    - name: Wait for VM to Stop
-      if: steps.ping_check.outputs.pingable == 'false'
-      run: |
-        echo "Waiting for instance to stop..."
-        # 实际上，您可能需要实现一个循环来等待实例完全停止，这里只是一个示意
+        # 等待实例停止，这里以简单延时代替实际的检查逻辑
         sleep 60
 
-    - name: Start GCP VM
-      if: steps.ping_check.outputs.pingable == 'false'
-      env:
-        GCP_PROJECT: YOUR_GCP_PROJECT # 替换为您的GCP项目ID
-      run: |
-        gcloud compute instances start ${{ env.INSTANCE_NAME }} --zone ${{ env.INSTANCE_ZONE }}
+        gcloud compute instances start ${{ env.GCP_VM_NAME }} --zone ${{ env.GCP_VM_ZONE }}
 
-    - name: Wait for VM to Start
-      if: steps.ping_check.outputs.pingable == 'false'
-      run: |
-        echo "Waiting for instance to start..."
-        # 实际上，您可能需要实现一个循环来等待实例完全启动，这里只是一个示意
+        # 等待实例启动，同样以延时代替实际检查
         sleep 120
 
-    - name: Get VM External IP
-      if: steps.ping_check.outputs.pingable == 'false'
-      env:
-        GCP_PROJECT: YOUR_GCP_PROJECT # 替换为您的GCP项目ID
-      run: |
-        EXTERNAL_IP=$(gcloud compute instances describe ${{ env.INSTANCE_NAME }} --zone ${{ env.INSTANCE_ZONE }} --format='get(networkInterfaces[0].accessConfigs[0].natIP)')
-        echo "Instance external IP: $EXTERNAL_IP"
-        echo "NEW_IP=$EXTERNAL_IP" >> $GITHUB_ENV
+        # 获取实例公网IP
+        instance_ip=$(gcloud compute instances describe ${{ env.GCP_VM_NAME }} --zone ${{ env.GCP_VM_ZONE }} --format='value(networkInterfaces[0].accessConfigs[0].natIP)')
+        echo "INSTANCE_IP=$instance_ip" >> $GITHUB_ENV
 
-    - name: Update Cloudflare DNS Record
-      if: steps.ping_check.outputs.pingable == 'false' && env.NEW_IP
+    - name: Update Cloudflare DNS
+      if: env.REACHABLE == 'false' && env.INSTANCE_IP
       run: |
-        curl -X PUT "https://api.cloudflare.com/client/v4/zones/${{ env.CLOUDFLARE_ZONE_ID }}/dns_records/hkdns" \
+        # 使用Cloudflare API更新DNS记录
+        curl -X PUT "https://api.cloudflare.com/client/v4/zones/${{ env.CLOUDFLARE_ZONE_ID }}/dns_records" \
           -H "Authorization: Bearer ${{ secrets.CLOUDFLARE_API_TOKEN }}" \
           -H "Content-Type: application/json" \
-          --data "{\"type\":\"A\",\"name\":\"${{ env.CLOUDFLARE_DOMAIN }}\",\"content\":\"${{ env.NEW_IP }}\",\"ttl\":120}"
+          --data "{\"type\":\"A\",\"name\":\"${{ env.CLOUDFLARE_DOMAIN }}\",\"content\":\"${{ env.INSTANCE_IP }}\",\"ttl\":120}" \
+          --fail
 
-    - name: Log Results
+    - name: Log Summary
       if: always()
       run: |
-        if [[ ${{ steps.ping_check.outputs.pingable }} == 'true' ]]; then
-          echo "Logged: Domain is pingable. No further action taken."
+        if [ "${{ env.REACHABLE }}" == 'true' ]; then
+          echo "Summary: Domain was reachable. No action taken."
+        elif [ -n "${{ env.INSTANCE_IP }}" ]; then
+          echo "Summary: DNS record updated to ${{ env.INSTANCE_IP }} after instance restart."
         else
-          echo "Logged: DNS record updated to ${{ env.NEW_IP }} after instance restart."
+          echo "Summary: Unexpected error occurred. No DNS update performed."
         fi
+
+    - name: Clean Up
+      if: env.REACHABLE != 'true'
+      run: |
+        rm sa-key.json # 清除服务账户密钥文件，出于安全考虑
