@@ -1,49 +1,53 @@
-name: QA Assign and Release Static IP for GCP VM
+name: QA GCP VM IP Management
 
 on:
   workflow_dispatch:
 
 env:
-  # GCP 项目 ID
+  instance_name: instance-tw
+  zone: asia-east1-b
   GCP_PROJECT_ID: infra-falcon-424407-c7
-  # GCP 服务账户密钥文件路径（已存储在 Github Actions 设置中）
-  GCP_SA_KEY_PATH: ${{ secrets.GCP_SA_KEY_PATH }}
-  # VM 实例名称
-  INSTANCE_NAME: instance-hk
-  # VM 实例所在区域
-  ZONE: asia-east2-a
+  GCP_SA_KEY: ${{ secrets.GCP_SA_KEY }}
 
-# 获取当前 IP 地址
 jobs:
-  healthcheck_and_manage_ec2:
+  ip_management:
     runs-on: ubuntu-latest
     steps:
-    - name: Get current IP address
+    - name: Checkout Repository
+      uses: actions/checkout@v2
+
+    - name: Setup GCP CLI with Service Account Key
+      uses: google-github-actions/setup-gcloud@v2.1.0
+      with:
+        service_account_key: ${{ secrets.GCP_SA_KEY }}
+        project_id: ${{ env.GCP_PROJECT_ID }}
+
+    - name: Get Current VM External IP
+      id: get_current_ip
       run: |
-        gcloud compute instances describe ${{ env.INSTANCE_NAME }} --zone=${{ env.ZONE }} --format='value(networkInterfaces[0].networkIP)' > current_ip.txt
-  
-  # 分配静态 IP 地址
-    - name: Assign static IP address
+        CURRENT_IP=$(gcloud compute instances describe "${{ env.instance_name }}" --zone="${{ env.zone }}" --format='value(networkInterfaces[0].accessConfigs[0].natIP)')
+        echo "::set-output name=current_ip::$CURRENT_IP"
+
+    - name: Remove Static IP from VM
+      if: steps.get_current_ip.outputs.current_ip != ''
       run: |
-        gcloud compute instances add-static-ip ${{ env.INSTANCE_NAME }} --zone=${{ env.ZONE }} --address=static-ip
-  
-  # 等待新 IP 地址分配
-    - name: Wait for new IP address assignment
+        gcloud compute instances remove-access-config "${{ env.instance_name }}" --access-config-name ExternalNAT --zone="${{ env.zone }}"
+      
+    - name: Allocate New Static IP
+      id: allocate_new_ip
       run: |
-        while true; do
-          new_ip=$(gcloud compute instances describe ${{ env.INSTANCE_NAME }} --zone=${{ env.ZONE }} --format='value(networkInterfaces[0].networkIP)');
-          if [ "$new_ip" != "" ]; then
-            break;
-          fi
-          sleep 10;
-          done
-  
-  # 更新环境变量中的 IP 地址
-    - name: Update environment variables with new IP address
+        # Extracting the region from the zone for address creation
+        REGION=$(echo "${{ env.zone }}" | cut -d'-' -f1,2)
+        NEW_IP=$(gcloud compute addresses create new-static-ip --region "$REGION" --format='value(address)')
+        echo "::set-output name=new_ip::$NEW_IP"
+        
+    - name: Attach New Static IP to VM
       run: |
-        echo "NEW_IP=$new_ip" >> $GITHUB_ENV
-  
-  # 释放旧的 IP 地址
-    - name: Release old IP address
+        gcloud compute instances add-access-config "${{ env.instance_name }}" --access-config-name ExternalNAT --nat-ip "${{ steps.allocate_new_ip.outputs.new_ip }}" --zone="${{ env.zone }}"
+        
+    - name: Release Old Static IP (optional)
+      if: steps.get_current_ip.outputs.current_ip != ''
       run: |
-        gcloud compute addresses delete static-ip --region=$(gcloud compute instances describe ${{ env.INSTANCE_NAME }} --zone=${{ env.ZONE }} --format='value(region)')
+        # Extracting the region from the zone for address deletion
+        REGION=$(echo "${{ env.zone }}" | cut -d'-' -f1,2)
+        gcloud compute addresses delete "${{ steps.get_current_ip.outputs.current_ip }}" --region "$REGION" --quiet
