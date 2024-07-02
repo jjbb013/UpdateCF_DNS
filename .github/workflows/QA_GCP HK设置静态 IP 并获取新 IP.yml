@@ -39,11 +39,12 @@ jobs:
       run: |
         CURRENT_IP=$(gcloud compute instances describe "${{ env.instance_name }}" --zone="${{ env.zone }}" --format='value(networkInterfaces[0].accessConfigs[0].natIP)')
         echo "::set-output name=current_ip::$CURRENT_IP"
+        echo $CURRENT_IP
 
-    - name: Remove Static IP from VM
+    - name: 提升静态 IP
       if: steps.get_current_ip.outputs.current_ip != ''
       run: |
-        gcloud compute instances remove-access-config "${{ env.instance_name }}" --access-config-name ExternalNAT --zone="${{ env.zone }}"
+        gcloud compute addresses create ${{ env.INSTANCE_NAME }}-ip --addresses=$IP_ADDRESS --region=$(echo ${{ env.ZONE }} | cut -d'-' -f1,2)
 
     - name: Allocate New Static IP
       id: allocate_new_ip
