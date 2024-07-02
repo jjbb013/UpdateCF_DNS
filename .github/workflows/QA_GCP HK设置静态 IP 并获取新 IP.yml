@@ -1,11 +1,11 @@
-name:  QA_GCP HK设置静态 IP 并获取新 IP
+name: GCP HK VM 静态IP Management
 
 on:
   workflow_dispatch:
 
 env:
-  instance_name: instance-tw
-  zone: asia-east1-b
+  instance_name: instance-hk
+  zone: asia-east2-a
   GCP_PROJECT_ID: infra-falcon-424407-c7
   GCP_SA_KEY: ${{ secrets.GCP_SA_KEY }}
 
@@ -32,10 +32,10 @@ jobs:
       if: steps.get_current_ip.outputs.current_ip != ''
       run: |
         gcloud compute instances remove-access-config "${{ env.instance_name }}" --access-config-name ExternalNAT --zone="${{ env.zone }}"
-    
+      
     - name: Allocate New Static IP
       id: allocate_new_ip
-      run: 
+      run: |
         NEW_IP=$(gcloud compute addresses create new-static-ip --region "${{ env.zone | cut -d'-' -f1,2 }}" --format='value(address)')
         echo "::set-output name=new_ip::$NEW_IP"
         
@@ -45,5 +45,5 @@ jobs:
         
     - name: Release Old Static IP (optional)
       if: steps.get_current_ip.outputs.current_ip != ''
-      run: 
+      run: |
         gcloud compute addresses delete "${{ steps.get_current_ip.outputs.current_ip }}" --region "${{ env.zone | cut -d'-' -f1,2 }}" --quiet
