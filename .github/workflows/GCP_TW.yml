@@ -1,0 +1,111 @@
+name: GCP TW Check Connectivity and Update DNS
+
+on:
+  schedule:
+    - cron: '0 */3 * * *' # 每3小时运行一次
+  workflow_dispatch:
+
+jobs:
+  monitor_dns:
+    runs-on: ubuntu-latest
+    env:
+      TARGET_DOMAIN: 'tw.nets.pp.ua'
+      TARGET_PORT: 1081
+      GCP_VM_ZONE: 'asia-east2-b'
+      GCP_VM_NAME: 'instance-tw'
+      DOMAIN: 'tw.nets.pp.ua'
+      CF_ZONE_ID: b2fc014bf87f67714afb1b9c10941a2e
+      GCP_SA_KEY: ${{ secrets.GCP_SA_KEY }}
+      PROXIED: 'false' # 是否开启Cloudflare代理，默认否
+      CF_API_TOKEN: ${{ secrets.CF_API_TOKEN }} # 从GitHub Secrets中获取API Token
+
+    steps:
+    - name: Check Domain Connectivity
+      id: check-connectivity
+      run: |
+        # 使用curl获取ping结果
+        API_URL="https://v2.api-m.com/api/tcping?address=${{env.TARGET_DOMAIN}}&port=1081"
+        response=$(curl -sL $API_URL)
+        echo ${{ env.TARGET_DOMAIN }} $response
+        if [ "$ping_result" == *"200"* ]]; then
+          echo "Domain is reachable."
+          echo "REACHABLE=true" >> $GITHUB_ENV
+        else
+          echo "Domain is unreachable."
+          echo "REACHABLE=false" >> $GITHUB_ENV
+        fi
+
+    - name: Handle Unreachable Domain
+      if: env.REACHABLE == 'false'
+      env:
+        GCP_PROJECT_ID: infra-falcon-424407-c7
+      run: |
+        echo "${{ env.GCP_SA_KEY }}" | base64 --decode > sa-key.json
+        gcloud auth activate-service-account --key-file sa-key.json --project ${{ env.GCP_PROJECT_ID }}
+        gcloud compute instances stop ${{ env.GCP_VM_NAME }} --zone ${{ env.GCP_VM_ZONE }}
+
+        # 等待实例停止，这里以简单延时代替实际的检查逻辑
+        sleep 60
+
+        gcloud compute instances start ${{ env.GCP_VM_NAME }} --zone ${{ env.GCP_VM_ZONE }}
+
+        # 等待实例启动，同样以延时代替实际检查
+        sleep 120
+
+        # 获取实例公网IP
+        instance_ip=$(gcloud compute instances describe ${{ env.GCP_VM_NAME }} --zone ${{ env.GCP_VM_ZONE }} --format='value(networkInterfaces[0].accessConfigs[0].natIP)')
+        echo "INSTANCE_IP=$instance_ip" >> $GITHUB_ENV
+
+    - name: Get Cloudflare DNS Record ID
+      if: env.REACHABLE == 'false'
+      run: |
+        # 使用cURL调用Cloudflare API获取DNS记录ID
+        DNS_RECORDS=$(curl -s -X GET "https://api.cloudflare.com/client/v4/zones/${{ env.CF_ZONE_ID }}/dns_records?name=${{ env.DOMAIN }}" \
+          -H "Authorization: Bearer ${{ env.CF_API_TOKEN }}" \
+          -H "Content-Type: application/json")
+        DNS_ID=$(echo "${DNS_RECORDS}" | jq -r '.result[] | select(.name == "'${{ env.DOMAIN }}'") | .id')
+        if [ -z "$DNS_ID" ]; then
+          echo "No DNS record found for ${{ env.DOMAIN }}"
+          exit 1
+        else
+          echo "DNS Record ID for ${{ env.DOMAIN }}: $DNS_ID"
+          echo "DNS_ID=$DNS_ID" >> $GITHUB_ENV
+        fi
+
+    - name: Update DNS Record
+      if: env.REACHABLE == 'false'
+      run: |
+        # 构建cURL请求命令，使用先前获取到的DNS_ID
+        UPDATE_CMD=$(echo -n "{\"type\":\"A\",\"name\":\"${{ env.DOMAIN }}\",\"content\":\"$INSTANCE_IP\",\"proxied\":${{ env.PROXIED }}}")
+        curl -X PUT "https://api.cloudflare.com/client/v4/zones/${{ env.CF_ZONE_ID }}/dns_records/${{ env.DNS_ID }}" \
+          -H "Authorization: Bearer ${{ env.CF_API_TOKEN }}" \
+          -H "Content-Type: application/json" \
+          --data-raw "$UPDATE_CMD"
+
+        # 检查响应状态
+        RESPONSE=$(curl -s -o /dev/null -w "%{http_code}" "https://api.cloudflare.com/client/v4/zones/${{ env.CF_ZONE_ID }}/dns_records/${{ env.DNS_ID }}" \
+          -H "Authorization: Bearer ${{ env.CF_API_TOKEN }}" \
+          -H "Content-Type: application/json")
+
+        if [ "$RESPONSE" -eq 200 ]; then
+          echo "DNS record updated successfully."
+        else
+          echo "Failed to update DNS record. Response code: $RESPONSE"
+          exit 1
+        fi
+
+    - name: Log Summary
+      if: always()
+      run: |
+        if [ "${{ env.REACHABLE }}" == 'true' ]; then
+          echo "Summary: Domain was reachable. No action taken."
+        elif [ -n "${{ env.INSTANCE_IP }}" ]; then
+          echo "Summary: DNS record updated to ${{ env.INSTANCE_IP }} after instance restart."
+        else
+          echo "Summary: Unexpected error occurred. No DNS update performed."
+        fi
+
+    - name: Clean Up
+      if: env.REACHABLE != 'true'
+      run: |
+        rm sa-key.json # 清除服务账户密钥文件，出于安全考虑
