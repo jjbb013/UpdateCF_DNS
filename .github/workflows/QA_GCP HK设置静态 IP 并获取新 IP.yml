@@ -4,8 +4,8 @@ on:
   workflow_dispatch:
 
 env:
-  instance_name: instance-tw
-  zone: asia-east1-b
+  instance_name: instance-hk
+  zone: asia-east2-a
   GCP_PROJECT_ID: infra-falcon-424407-c7
   GCP_SA_KEY: ${{ secrets.GCP_SA_KEY }}
 
