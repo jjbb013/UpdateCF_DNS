@@ -35,7 +35,7 @@ jobs:
     
     - name: Allocate New Static IP
       id: allocate_new_ip
-      run: |
+      run: 
         NEW_IP=$(gcloud compute addresses create new-static-ip --region "${{ env.zone | cut -d'-' -f1,2 }}" --format='value(address)')
         echo "::set-output name=new_ip::$NEW_IP"
         
@@ -45,5 +45,5 @@ jobs:
         
     - name: Release Old Static IP (optional)
       if: steps.get_current_ip.outputs.current_ip != ''
-      run: |
+      run: 
         gcloud compute addresses delete "${{ steps.get_current_ip.outputs.current_ip }}" --region "${{ env.zone | cut -d'-' -f1,2 }}" --quiet
