@@ -44,8 +44,14 @@ jobs:
     - name: 提升静态 IP
       if: steps.get_current_ip.outputs.current_ip != ''
       run: |
-        gcloud compute addresses create ${{ env.INSTANCE_NAME }}-ip --addresses=$CURRENT_IP --region=$(echo ${{ env.ZONE }} | cut -d'-' -f1,2)
-
+        # 删除旧的静态IP地址
+        gcloud compute addresses delete "$CURRENT_IP" --region "$(echo "${{ env.zone }}" | cut -d'-' -f1,2)" --quiet
+        
+        # 创建一个新的静态IP地址
+        NEW_IP=$(gcloud compute addresses create new-static-ip --region "$(echo "${{ env.zone }}" | cut -d'-' -f1,2)" --format='value(address)')
+        
+        # 将新静态IP地址分配给实例
+        gcloud compute instances add-access-config "${{ env.instance_name }}" --access-config-name ExternalNAT --nat-ip "$NEW_IP" --zone="${{ env.zone }}"
     - name: Allocate New Static IP
       id: allocate_new_ip
       run: |
