@@ -1,6 +1,8 @@
 name: QA Assign and Release Static IP for GCP VM
+
 on:
   workflow_dispatch:
+
 env:
   # GCP 项目 ID
   GCP_PROJECT_ID: infra-falcon-424407-c7
@@ -12,33 +14,36 @@ env:
   ZONE: asia-east2-a
 
 # 获取当前 IP 地址
-steps:
-- name: Get current IP address
-  run: |
-    gcloud compute instances describe ${{ env.INSTANCE_NAME }} --zone=${{ env.ZONE }} --format='value(networkInterfaces[0].networkIP)' > current_ip.txt
-
-# 分配静态 IP 地址
-- name: Assign static IP address
-  run: |
-    gcloud compute instances add-static-ip ${{ env.INSTANCE_NAME }} --zone=${{ env.ZONE }} --address=static-ip
-
-# 等待新 IP 地址分配
-- name: Wait for new IP address assignment
-  run: |
-    while true; do
-      new_ip=$(gcloud compute instances describe ${{ env.INSTANCE_NAME }} --zone=${{ env.ZONE }} --format='value(networkInterfaces[0].networkIP)');
-      if [ "$new_ip" != "" ]; then
-        break;
-      fi
-      sleep 10;
-    done
-
-# 更新环境变量中的 IP 地址
-- name: Update environment variables with new IP address
-  run: |
-    echo "NEW_IP=$new_ip" >> $GITHUB_ENV
-
-# 释放旧的 IP 地址
-- name: Release old IP address
-  run: |
-    gcloud compute addresses delete static-ip --region=$(gcloud compute instances describe ${{ env.INSTANCE_NAME }} --zone=${{ env.ZONE }} --format='value(region)')
+jobs:
+  healthcheck_and_manage_ec2:
+    runs-on: ubuntu-latest
+    steps:
+    - name: Get current IP address
+      run: |
+        gcloud compute instances describe ${{ env.INSTANCE_NAME }} --zone=${{ env.ZONE }} --format='value(networkInterfaces[0].networkIP)' > current_ip.txt
+  
+  # 分配静态 IP 地址
+    - name: Assign static IP address
+      run: |
+        gcloud compute instances add-static-ip ${{ env.INSTANCE_NAME }} --zone=${{ env.ZONE }} --address=static-ip
+  
+  # 等待新 IP 地址分配
+    - name: Wait for new IP address assignment
+      run: |
+        while true; do
+          new_ip=$(gcloud compute instances describe ${{ env.INSTANCE_NAME }} --zone=${{ env.ZONE }} --format='value(networkInterfaces[0].networkIP)');
+          if [ "$new_ip" != "" ]; then
+            break;
+          fi
+          sleep 10;
+          done
+  
+  # 更新环境变量中的 IP 地址
+    - name: Update environment variables with new IP address
+      run: |
+        echo "NEW_IP=$new_ip" >> $GITHUB_ENV
+  
+  # 释放旧的 IP 地址
+    - name: Release old IP address
+      run: |
+        gcloud compute addresses delete static-ip --region=$(gcloud compute instances describe ${{ env.INSTANCE_NAME }} --zone=${{ env.ZONE }} --format='value(region)')
