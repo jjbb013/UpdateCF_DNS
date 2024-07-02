@@ -27,7 +27,7 @@ jobs:
         API_URL="https://v2.api-m.com/api/tcping?address=${{env.TARGET_DOMAIN}}&port=1081"
         response=$(curl -sL $API_URL)
         echo ${{ env.TARGET_DOMAIN }} $response
-        if [ "$ping_result" == *"200"* ]]; then
+        if [ "$response" == *"200"* ]]; then
           echo "Domain is reachable."
           echo "REACHABLE=true" >> $GITHUB_ENV
         else
