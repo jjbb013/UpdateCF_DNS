@@ -44,7 +44,7 @@ jobs:
     - name: 提升静态 IP
       if: steps.get_current_ip.outputs.current_ip != ''
       run: |
-        gcloud compute addresses create ${{ env.INSTANCE_NAME }}-ip --addresses=$IP_ADDRESS --region=$(echo ${{ env.ZONE }} | cut -d'-' -f1,2)
+        gcloud compute addresses create ${{ env.INSTANCE_NAME }}-ip --addresses=$CURRENT_IP --region=$(echo ${{ env.ZONE }} | cut -d'-' -f1,2)
 
     - name: Allocate New Static IP
       id: allocate_new_ip
