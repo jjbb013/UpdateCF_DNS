@@ -38,7 +38,7 @@ jobs:
       uses: actions/checkout@v2
   
     - name: Authentication
-    - id: 'auth'
+      id: 'auth'
       if: env.REACHABLE == 'false'
       uses: 'google-github-actions/auth@v2'
       with:
