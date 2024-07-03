@@ -71,7 +71,7 @@ jobs:
         echo "Current IP is $CURRENT_IP"
         CURRENT_ACCESS_CONFIG_NAME=$(gcloud compute instances describe ${{ env.GCP_VM_NAME }} --zone=${{ env.GCP_VM_ZONE }} --format 'value[separator=": "](networkInterfaces[0].accessConfigs[0].name)')
         echo "::set-output name=current_access_config_name::$CURRENT_ACCESS_CONFIG_NAME"
-        echo "CURRENT_ACCESS_CONFIG_NAME is $CURRENT_ACCESS_CONFIG_NAME"
+        echo "CURRENT_ACCESS_CONFIG_NAME=$CURRENT_ACCESS_CONFIG_NAME" >> $GITHUB_ENV
         
     - name: Reconfig VM and Test IP
       if: env.REACHABLE == 'false'
