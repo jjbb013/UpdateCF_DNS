@@ -129,7 +129,7 @@ jobs:
           -H "Authorization: Bearer ${{ env.CF_API_TOKEN }}" \
           -H "Content-Type: application/json")
 
-        if [ "$RESPONSE" == *"success"* ]; then
+        if [ "$RESPONSE" -eq 200 ]; then
           echo "DNS record updated successfully."
         else
           echo "Failed to update DNS record. Response code: $RESPONSE"
