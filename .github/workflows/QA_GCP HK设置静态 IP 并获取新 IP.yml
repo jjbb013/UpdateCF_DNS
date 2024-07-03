@@ -67,6 +67,7 @@ jobs:
         echo "Current IP is $CURRENT_IP"
         
     - name: reconfig vm and test ip
+      if: env.REACHABLE == 'false'
       id: reconfig_vm_and_test_ip
       run: |
         while true; do
