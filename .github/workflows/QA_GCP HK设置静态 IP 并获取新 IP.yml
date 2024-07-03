@@ -40,19 +40,11 @@ jobs:
         CURRENT_IP=$(gcloud compute instances describe "${{ env.instance_name }}" --zone="${{ env.zone }}" --format='value(networkInterfaces[0].accessConfigs[0].natIP)')
         echo "::set-output name=current_ip::$CURRENT_IP"
         echo "Current IP is $CURRENT_IP"
+        
     - name: reconfig vm and test ip
       id: reconfig_vm_and_test_ip
       run: |
         while true; do
-            API_URL="https://v2.api-m.com/api/tcping?address=$NEW_IP&port=1081"
-            response=$(curl -sL $API_URL)
-            echo $NEW_IP $response
-            if [[ "$response" == *"200"* ]]; then
-              echo "$NEW_IP is OK to Ping..."
-              break
-            fi
-            echo "$NEW_IP is NOT OK to Ping..."
-            sleep 10
             gcloud compute instances delete-access-config ${{ env.instance_name }} --access-config-name="external-nat" --zone=${{ env.zone }}
             while true; do
                 STATUS=$(gcloud compute instances describe "${{ env.instance_name }}" --zone="${{ env.zone }}" --project="${{ env.GCP_PROJECT_ID }}" --format='value(status)')
@@ -67,4 +59,14 @@ jobs:
             NEW_IP=$(gcloud compute instances describe "${{ env.instance_name }}" --zone="${{ env.zone }}" --format='value(networkInterfaces[0].accessConfigs[0].natIP)')
             echo "::set-output name=new_ip::$NEW_IP"
             echo "New IP is $NEW_IP"
+            API_URL="https://v2.api-m.com/api/tcping?address=$NEW_IP&port=1081"
+            response=$(curl -sL $API_URL)
+            echo $NEW_IP $response
+            if [[ "$response" == *"200"* ]]; then
+              echo "$NEW_IP is OK to Ping..."
+              break
+            fi
+            echo "$NEW_IP is NOT OK to Ping, VM Reconfiging..."
+            sleep 10
          done
+         
