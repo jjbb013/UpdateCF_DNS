@@ -40,13 +40,14 @@ jobs:
         CURRENT_IP=$(gcloud compute instances describe "${{ env.instance_name }}" --zone="${{ env.zone }}" --format='value(networkInterfaces[0].accessConfigs[0].natIP)')
         echo "::set-output name=current_ip::$CURRENT_IP"
         echo $CURRENT_IP
-    - name: reconfig vm
-      id: reconfig_vm
+    - name: reconfig vm and test ip
+      id: reconfig_vm_and_test_ip
       run: |
         gcloud compute instances delete-access-config ${{ env.instance_name }} --access-config-name="External NAT" --zone=${{ env.zone }}
         while true; do
             STATUS=$(gcloud compute instances describe "${{ env.instance_name }}" --zone="${{ env.zone }}" --project="${{ env.GCP_PROJECT_ID }}" --format='value(status)')
             if [ "$STATUS" = "RUNNING" ]; then
+                echo "instance is running..."
                 break
             fi
             echo "Waiting for instance to be running..."
