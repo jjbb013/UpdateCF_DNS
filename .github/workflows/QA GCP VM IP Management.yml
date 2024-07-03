@@ -141,8 +141,8 @@ jobs:
       run: |
         if [ "${{ env.REACHABLE }}" == 'true' ]; then
           echo "Summary: Domain was reachable. No action taken."
-        elif [ -n "${{ env.INSTANCE_IP }}" ]; then
-          echo "Summary: DNS record updated to ${{ env.INSTANCE_IP }} after instance restart."
+        elif [ -n "$NEW_IP" ]; then
+          echo "Summary: DNS record updated to $NEW_IP after instance restart."
         else
           echo "Summary: Unexpected error occurred. No DNS update performed."
         fi
