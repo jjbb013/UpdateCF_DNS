@@ -43,7 +43,7 @@ jobs:
     - name: reconfig vm
       id: reconfig_vm
       run: |
-        gcloud compute instances delete-access-config "${{ env.instance_name }}" --config-name=ONE_TO_ONE_NAT --zone="${{ env.zone }}" --project="${{ env.GCP_PROJECT_ID }}"
+        gcloud compute instances delete-access-config ${{ env.instance_name }} --zone=${{ env.zone }}
         while true; do
             STATUS=$(gcloud compute instances describe "${{ env.instance_name }}" --zone="${{ env.zone }}" --project="${{ env.GCP_PROJECT_ID }}" --format='value(status)')
             if [ "$STATUS" = "RUNNING" ]; then
