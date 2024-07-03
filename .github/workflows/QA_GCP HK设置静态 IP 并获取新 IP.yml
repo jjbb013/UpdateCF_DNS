@@ -60,10 +60,10 @@ jobs:
         export_default_credentials: true
 
     - name: Get Current VM External IP
-      if: env.REACHABLE == 'false'
+      if: env.REACHABLE == 'true'
       id: get_current_ip
       run: |
-        CURRENT_IP=$(gcloud compute instances describe "${{ env.GCP_VM_name }}" --zone="${{ env.GCP_VM_zone }}" --format='value(networkInterfaces[0].accessConfigs[0].natIP)')
+        CURRENT_IP=$(gcloud compute instances describe ${{ env.GCP_VM_name }} --zone=${{ env.GCP_VM_zone }} --format='value(networkInterfaces[0].accessConfigs[0].natIP)')
         echo "::set-output name=current_ip::$CURRENT_IP"
         echo "Current IP is $CURRENT_IP"
         
@@ -74,7 +74,7 @@ jobs:
         while true; do
             gcloud compute instances delete-access-config ${{ env.GCP_VM_NAME }} --access-config-name="external-nat" --zone=${{ env.GCP_VM_ZONE }}
             while true; do
-                STATUS=$(gcloud compute instances describe "${{ env.GCP_VM_NAME }}" --zone="${{ env.GCP_VM_ZONE }}" --project="${{ env.GCP_PROJECT_ID }}" --format='value(status)')
+                STATUS=$(gcloud compute instances describe ${{ env.GCP_VM_NAME }} --zone=${{ env.GCP_VM_ZONE }} --project=${{ env.GCP_PROJECT_ID }} --format='value(status)')
                 if [ "$STATUS" = "RUNNING" ]; then
                     echo "instance is running..."
                     break
