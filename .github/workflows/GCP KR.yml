@@ -69,15 +69,17 @@ jobs:
         CURRENT_IP=$(gcloud compute instances describe ${{ env.GCP_VM_NAME }} --zone=${{ env.GCP_VM_ZONE }} --format='value(networkInterfaces[0].accessConfigs[0].natIP)')
         echo "::set-output name=current_ip::$CURRENT_IP"
         echo "Current IP is $CURRENT_IP"
-        CURRENT_ACCESS_CONFIG_NAME=$(gcloud compute instances describe ${{ env.GCP_VM_NAME }} --zone=${{ env.GCP_VM_ZONE }} --format 'value[separator=": "](networkInterfaces[0].accessConfigs[0].name)')
-        echo "::set-output name=current_access_config_name::$CURRENT_ACCESS_CONFIG_NAME"
-        echo "CURRENT_ACCESS_CONFIG_NAME=$CURRENT_ACCESS_CONFIG_NAME" >> $GITHUB_ENV
+
         
     - name: Reconfig VM and Test IP
       if: env.REACHABLE == 'false'
       id: reconfig_vm_and_test_ip
       run: |
         while true; do
+            CURRENT_ACCESS_CONFIG_NAME=$(gcloud compute instances describe ${{ env.GCP_VM_NAME }} --zone=${{ env.GCP_VM_ZONE }} --format 'value[separator=": "](networkInterfaces[0].accessConfigs[0].name)')
+            # echo "::set-output name=current_access_config_name::$CURRENT_ACCESS_CONFIG_NAME"
+            echo "CURRENT_ACCESS_CONFIG_NAME=$CURRENT_ACCESS_CONFIG_NAME" >> $GITHUB_ENV
+            echo "New Access Config Name is ${{env.CURRENT_ACCESS_CONFIG_NAME}}"
             gcloud compute instances delete-access-config ${{ env.GCP_VM_NAME }} --access-config-name="${{env.CURRENT_ACCESS_CONFIG_NAME}}" --zone=${{ env.GCP_VM_ZONE }}
             while true; do
                 STATUS=$(gcloud compute instances describe ${{ env.GCP_VM_NAME }} --zone=${{ env.GCP_VM_ZONE }} --project=${{ env.GCP_PROJECT_ID }} --format='value(status)')
