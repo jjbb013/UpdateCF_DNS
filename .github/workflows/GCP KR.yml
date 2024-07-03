@@ -69,13 +69,16 @@ jobs:
         CURRENT_IP=$(gcloud compute instances describe ${{ env.GCP_VM_NAME }} --zone=${{ env.GCP_VM_ZONE }} --format='value(networkInterfaces[0].accessConfigs[0].natIP)')
         echo "::set-output name=current_ip::$CURRENT_IP"
         echo "Current IP is $CURRENT_IP"
+        CURRENT_ACCESS_CONFIG_NAME=$(gcloud compute instances describe ${{ env.GCP_VM_NAME }} --zone=${{ env.GCP_VM_ZONE }} --format 'value[separator=": "](networkInterfaces[0].accessConfigs[0].name)')
+        echo "::set-output name=current_access_config_name::$CURRENT_ACCESS_CONFIG_NAME"
+        echo "CURRENT_ACCESS_CONFIG_NAME is $CURRENT_ACCESS_CONFIG_NAME"
         
     - name: Reconfig VM and Test IP
       if: env.REACHABLE == 'false'
       id: reconfig_vm_and_test_ip
       run: |
         while true; do
-            gcloud compute instances delete-access-config ${{ env.GCP_VM_NAME }} --zone=${{ env.GCP_VM_ZONE }}
+            gcloud compute instances delete-access-config ${{ env.GCP_VM_NAME }} --access-config-name=$CURRENT_ACCESS_CONFIG_NAME --zone=${{ env.GCP_VM_ZONE }}
             while true; do
                 STATUS=$(gcloud compute instances describe ${{ env.GCP_VM_NAME }} --zone=${{ env.GCP_VM_ZONE }} --project=${{ env.GCP_PROJECT_ID }} --format='value(status)')
                 if [ "$STATUS" = "RUNNING" ]; then
