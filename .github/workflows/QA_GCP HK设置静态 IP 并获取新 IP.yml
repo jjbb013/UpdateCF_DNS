@@ -70,9 +70,9 @@ jobs:
       id: reconfig_vm_and_test_ip
       run: |
         while true; do
-            gcloud compute instances delete-access-config ${{ env.GCP_VM_name }} --access-config-name="external-nat" --zone=${{ env.GCP_VM_zone }}
+            gcloud compute instances delete-access-config ${{ env.GCP_VM_NAME }} --access-config-name="external-nat" --zone=${{ env.GCP_VM_ZONE }}
             while true; do
-                STATUS=$(gcloud compute instances describe "${{ env.GCP_VM_name }}" --zone="${{ env.GCP_VM_zone }}" --project="${{ env.GCP_PROJECT_ID }}" --format='value(status)')
+                STATUS=$(gcloud compute instances describe "${{ env.GCP_VM_NAME }}" --zone="${{ env.GCP_VM_ZONE }}" --project="${{ env.GCP_PROJECT_ID }}" --format='value(status)')
                 if [ "$STATUS" = "RUNNING" ]; then
                     echo "instance is running..."
                     break
@@ -80,8 +80,8 @@ jobs:
                 echo "Waiting for instance to be running..."
                 sleep 10
             done
-            gcloud compute instances add-access-config ${{ env.GCP_VM_name }} --zone=${{ env.GCP_VM_zone }}
-            NEW_IP=$(gcloud compute instances describe "${{ env.GCP_VM_name }}" --zone="${{ env.GCP_VM_zone }}" --format='value(networkInterfaces[0].accessConfigs[0].natIP)')
+            gcloud compute instances add-access-config ${{ env.GCP_VM_NAME }} --zone=${{ env.GCP_VM_ZONE }}
+            NEW_IP=$(gcloud compute instances describe "${{ env.GCP_VM_NAME }}" --zone="${{ env.GCP_VM_ZONE }}" --format='value(networkInterfaces[0].accessConfigs[0].natIP)')
             echo "::set-output name=new_ip::$NEW_IP"
             echo "New IP is $NEW_IP"
             API_URL="https://v2.api-m.com/api/tcping?address=$NEW_IP&port=1081"
