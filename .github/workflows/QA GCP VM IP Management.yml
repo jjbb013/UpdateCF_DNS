@@ -61,7 +61,7 @@ jobs:
         export_default_credentials: true
 
     - name: Get Current VM External IP
-      if: env.REACHABLE == 'true'
+      if: env.REACHABLE == 'false'
       id: get_current_ip
       run: |
         CURRENT_IP=$(gcloud compute instances describe ${{ env.GCP_VM_NAME }} --zone=${{ env.GCP_VM_ZONE }} --format='value(networkInterfaces[0].accessConfigs[0].natIP)')
