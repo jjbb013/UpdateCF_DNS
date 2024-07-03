@@ -36,7 +36,8 @@ jobs:
     - name: Checkout Repository
       if: env.REACHABLE == 'false'
       uses: actions/checkout@v2
-
+  
+    - name: Authentication
     - id: 'auth'
       if: env.REACHABLE == 'false'
       uses: 'google-github-actions/auth@v2'
@@ -67,7 +68,7 @@ jobs:
         echo "::set-output name=current_ip::$CURRENT_IP"
         echo "Current IP is $CURRENT_IP"
         
-    - name: reconfig vm and test ip
+    - name: Reconfig VM and Test IP
       if: env.REACHABLE == 'false'
       id: reconfig_vm_and_test_ip
       run: |
@@ -76,7 +77,7 @@ jobs:
             while true; do
                 STATUS=$(gcloud compute instances describe ${{ env.GCP_VM_NAME }} --zone=${{ env.GCP_VM_ZONE }} --project=${{ env.GCP_PROJECT_ID }} --format='value(status)')
                 if [ "$STATUS" = "RUNNING" ]; then
-                    echo "instance is running..."
+                    echo "instance is updating new config..."
                     break
                 fi
                 echo "Waiting for instance to be running..."
@@ -90,12 +91,12 @@ jobs:
             response=$(curl -sL $API_URL)
             echo $NEW_IP $response
             if [[ "$response" == *"200"* ]]; then
-              echo "$NEW_IP is OK to Ping..."
+              echo "$NEW_IP is able to Ping...OK"
               echo "NEW_IP=$NEW_IP" >> $GITHUB_ENV
               break
             fi
-            echo "$NEW_IP is NOT OK to Ping, VM Reconfiging..."
-            sleep 10
+            echo "$NEW_IP is NOT able to Ping, VM Reconfiging..."
+            sleep 5
          done
 
     - name: Get Cloudflare DNS Record ID
