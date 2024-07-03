@@ -1,4 +1,4 @@
-name: GCP VM IP Management
+name: QA GCP VM IP Management
 
 on:
   workflow_dispatch:
