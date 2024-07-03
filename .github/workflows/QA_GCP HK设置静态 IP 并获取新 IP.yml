@@ -43,7 +43,7 @@ jobs:
     - name: reconfig vm
       id: reconfig_vm
       run: |
-        gcloud compute instances delete-access-config ${{ env.instance_name }} --access-config-name="external-nat" --zone=${{ env.zone }}
+        gcloud compute instances delete-access-config ${{ env.instance_name }} --access-config-name="External NAT" --zone=${{ env.zone }}
         while true; do
             STATUS=$(gcloud compute instances describe "${{ env.instance_name }}" --zone="${{ env.zone }}" --project="${{ env.GCP_PROJECT_ID }}" --format='value(status)')
             if [ "$STATUS" = "RUNNING" ]; then
