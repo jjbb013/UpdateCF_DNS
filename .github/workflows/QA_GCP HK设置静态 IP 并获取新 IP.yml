@@ -39,18 +39,32 @@ jobs:
       run: |
         CURRENT_IP=$(gcloud compute instances describe "${{ env.instance_name }}" --zone="${{ env.zone }}" --format='value(networkInterfaces[0].accessConfigs[0].natIP)')
         echo "::set-output name=current_ip::$CURRENT_IP"
-        echo $CURRENT_IP
+        echo "Current IP is $CURRENT_IP"
     - name: reconfig vm and test ip
       id: reconfig_vm_and_test_ip
       run: |
-        gcloud compute instances delete-access-config ${{ env.instance_name }} --access-config-name="external-nat" --zone=${{ env.zone }}
         while true; do
-            STATUS=$(gcloud compute instances describe "${{ env.instance_name }}" --zone="${{ env.zone }}" --project="${{ env.GCP_PROJECT_ID }}" --format='value(status)')
-            if [ "$STATUS" = "RUNNING" ]; then
-                echo "instance is running..."
-                break
+            API_URL="https://v2.api-m.com/api/tcping?address=$NEW_IP&port=1081"
+            response=$(curl -sL $API_URL)
+            echo $NEW_IP $response
+            if [[ "$response" == *"200"* ]]; then
+              echo "$NEW_IP is OK to Ping..."
+              break
             fi
-            echo "Waiting for instance to be running..."
+            echo "$NEW_IP is NOT OK to Ping..."
             sleep 10
-        done
-        gcloud compute instances add-access-config ${{ env.instance_name }} --zone=${{ env.zone }} --project=${{ env.GCP_PROJECT_ID }}
+            gcloud compute instances delete-access-config ${{ env.instance_name }} --access-config-name="external-nat" --zone=${{ env.zone }}
+            while true; do
+                STATUS=$(gcloud compute instances describe "${{ env.instance_name }}" --zone="${{ env.zone }}" --project="${{ env.GCP_PROJECT_ID }}" --format='value(status)')
+                if [ "$STATUS" = "RUNNING" ]; then
+                    echo "instance is running..."
+                    break
+                fi
+                echo "Waiting for instance to be running..."
+                sleep 10
+            done
+            gcloud compute instances add-access-config ${{ env.instance_name }} --zone=${{ env.zone }}
+            NEW_IP=$(gcloud compute instances describe "${{ env.instance_name }}" --zone="${{ env.zone }}" --format='value(networkInterfaces[0].accessConfigs[0].natIP)')
+            echo "::set-output name=new_ip::$NEW_IP"
+            echo "New IP is $NEW_IP"
+         done
