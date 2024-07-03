@@ -75,7 +75,7 @@ jobs:
       id: reconfig_vm_and_test_ip
       run: |
         while true; do
-            gcloud compute instances delete-access-config ${{ env.GCP_VM_NAME }} --access-config-name="External NAT" --zone=${{ env.GCP_VM_ZONE }}
+            gcloud compute instances delete-access-config ${{ env.GCP_VM_NAME }} --access-config-name="external-nat" --zone=${{ env.GCP_VM_ZONE }}
             while true; do
                 STATUS=$(gcloud compute instances describe ${{ env.GCP_VM_NAME }} --zone=${{ env.GCP_VM_ZONE }} --project=${{ env.GCP_PROJECT_ID }} --format='value(status)')
                 if [ "$STATUS" = "RUNNING" ]; then
