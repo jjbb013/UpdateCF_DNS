@@ -51,8 +51,16 @@ jobs:
       run: |
         # 注意：AWS EC2实例的网络配置与GCP不同，直接删除并重新添加公共IP可能需要停止和启动实例。
         while true; do
+          echo "Stopping EC2 instance..."
           aws ec2 stop-instances --instance-ids ${{ env.EC2_INSTANCE_ID }} --region ${{ env.AWS_REGION }}
+          echo "Waiting for instance to stop..."
+          aws ec2 wait instance-stopped --instance-ids ${{ env.EC2_INSTANCE_ID }} --region ${{ env.AWS_REGION }}
+          echo "Starting EC2 instance..."
           aws ec2 start-instances --instance-ids ${{ env.EC2_INSTANCE_ID }} --region ${{ env.AWS_REGION }}
+          echo "Waiting for instance to start..."
+          aws ec2 wait instance-running --instance-ids ${{ env.EC2_INSTANCE_ID }} --region ${{ env.AWS_REGION }}
+          echo "Instance restarted."
+          echo "Getting instance IPv4 Address..."
           NEW_IP=$(aws ec2 describe-instances --region ${{ env.AWS_REGION }} --instance-ids ${{ env.EC2_INSTANCE_ID }} --query 'Reservations[*].Instances[*].[PublicIpAddress]' --output text)
           echo "::set-output name=new_ip::$NEW_IP"
           echo "New IP is $NEW_IP"
