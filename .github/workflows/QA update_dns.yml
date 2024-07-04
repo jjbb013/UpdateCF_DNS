@@ -1,4 +1,4 @@
-name: Update Cloudflare DNS Record
+name: QA Update Cloudflare DNS Record
 
 on:
   # 触发条件可以根据需求设定，这里以workflow_dispatch为例，代表手动触发
