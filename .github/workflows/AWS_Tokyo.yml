@@ -66,7 +66,7 @@ jobs:
           echo "New IP is $NEW_IP"
           echo "Waiting 30s..."
           sleep 30
-          API_URL="https://v2.api-m.com/api/tcping?address=$NEW_IP&port=${{ env.PORT }}"
+          API_URL="https://v2.api-m.com/api/tcping?address=$NEW_IP&port=22"
           response=$(curl -sL $API_URL)
           echo $NEW_IP $response
           if [[ "$response" == *"200"* ]]; then
