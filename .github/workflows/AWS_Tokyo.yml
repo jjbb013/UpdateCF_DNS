@@ -11,7 +11,7 @@ env:
   EC2_INSTANCE_ID: 'i-0e847507a4ed7e836' # EC2实例ID
   DOMAIN: 'tokyo.onemorething.pp.ua'
   CF_ZONE_ID: 1fa9774064820f53fe1733e37a19f721
-  PORT: 22
+  PORT: 1081
   PROXIED: 'false' # 是否开启Cloudflare代理，默认否
   CF_API_TOKEN: ${{ secrets.CF_API_TOKEN }} # 从GitHub Secrets中获取API Token
 
@@ -64,8 +64,8 @@ jobs:
           NEW_IP=$(aws ec2 describe-instances --region ${{ env.AWS_REGION }} --instance-ids ${{ env.EC2_INSTANCE_ID }} --query 'Reservations[*].Instances[*].[PublicIpAddress]' --output text)
           echo "::set-output name=new_ip::$NEW_IP"
           echo "New IP is $NEW_IP"
-          echo "Waiting 10s..."
-          sleep 10
+          echo "Waiting 30s..."
+          sleep 30
           API_URL="https://v2.api-m.com/api/tcping?address=$NEW_IP&port=${{ env.PORT }}"
           response=$(curl -sL $API_URL)
           echo $NEW_IP $response
