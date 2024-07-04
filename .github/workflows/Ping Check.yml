@@ -1,4 +1,4 @@
-name: TCPing Check with Bark Notification
+name: Ping Check with Bark Notification
 
 on:
   schedule:
