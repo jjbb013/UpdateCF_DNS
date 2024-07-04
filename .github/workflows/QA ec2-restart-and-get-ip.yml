@@ -1,4 +1,4 @@
-name: Get Public IP
+name: QA EC2 Get Public IP
 
 on:
   workflow_dispatch: # 触发方式，这里手动触发，也可以改为push、pull_request等
