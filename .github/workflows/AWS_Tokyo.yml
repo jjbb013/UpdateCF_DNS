@@ -64,6 +64,8 @@ jobs:
           NEW_IP=$(aws ec2 describe-instances --region ${{ env.AWS_REGION }} --instance-ids ${{ env.EC2_INSTANCE_ID }} --query 'Reservations[*].Instances[*].[PublicIpAddress]' --output text)
           echo "::set-output name=new_ip::$NEW_IP"
           echo "New IP is $NEW_IP"
+          echo "Waiting 20s..."
+          sleep 20
           API_URL="https://v2.api-m.com/api/tcping?address=$NEW_IP&port=1081"
           response=$(curl -sL $API_URL)
           echo $NEW_IP $response
@@ -73,7 +75,8 @@ jobs:
             break
           fi
             echo "$NEW_IP is NOT able to Ping, EC2 Reconfiguring..."
-            sleep 5
+            echo "Waiting 20s..."
+            sleep 20
         done
 
     - name: Get Cloudflare DNS Record ID
