@@ -50,43 +50,28 @@ jobs:
       id: reconfig_ec2_network
       run: |
         # 注意：AWS EC2实例的网络配置与GCP不同，直接删除并重新添加公共IP可能需要停止和启动实例。
-        aws ec2 stop-instances --instance-ids ${{ env.EC2_INSTANCE_ID }} --region ${{ env.AWS_REGION }}
         while true; do
-          STATUS=$(aws ec2 describe-instances --instance-ids ${{ env.EC2_INSTANCE_ID }} --region ${{ env.AWS_REGION }} --query 'Reservations[*].Instances[*].[State.Name]' --output text)
-          if [ "$STATUS" = "stopped" ]; then
-            echo "instance is stopped."
+          aws ec2 stop-instances --instance-ids ${{ env.EC2_INSTANCE_ID }} --region ${{ env.AWS_REGION }}
+          aws ec2 start-instances --instance-ids ${{ env.EC2_INSTANCE_ID }} --region ${{ env.AWS_REGION }}
+          NEW_IP=$(aws ec2 describe-instances --region ${{ env.AWS_REGION }} --instance-ids ${{ env.EC2_INSTANCE_ID }} --query 'Reservations[*].Instances[*].[PublicIpAddress]' --output text)
+          echo "::set-output name=new_ip::$NEW_IP"
+          echo "New IP is $NEW_IP"
+          API_URL="https://v2.api-m.com/api/tcping?address=$NEW_IP&port=1081"
+          response=$(curl -sL $API_URL)
+          echo $NEW_IP $response
+          if [[ "$response" == *"200"* ]]; then
+            echo "$NEW_IP is able to Ping...OK"
+            echo "NEW_IP=$NEW_IP" >> $GITHUB_ENV
             break
           fi
-          echo "Waiting for instance to be stopped..."
-          sleep 10
+            echo "$NEW_IP is NOT able to Ping, EC2 Reconfiguring..."
+            sleep 5
         done
-        aws ec2 start-instances --instance-ids ${{ env.EC2_INSTANCE_ID }} --region ${{ env.AWS_REGION }}
-        while true; do
-          STATUS=$(aws ec2 describe-instances --instance-ids ${{ env.EC2_INSTANCE_ID }} --region ${{ env.AWS_REGION }} --query 'Reservations[*].Instances[*].[State.Name]' --output text)
-          if [ "$STATUS" = "running" ]; then
-            echo "instance is running."
-            break
-          fi
-          echo "Waiting for instance to be running..."
-          sleep 10
-        done
-        NEW_IP=$(aws ec2 describe-instances --region ${{ env.AWS_REGION }} --instance-ids ${{ env.EC2_INSTANCE_ID }} --query 'Reservations[*].Instances[*].[PublicIpAddress]' --output text)
-        echo "::set-output name=new_ip::$NEW_IP"
-        echo "New IP is $NEW_IP"
-        API_URL="https://v2.api-m.com/api/tcping?address=$NEW_IP&port=1081"
-        response=$(curl -sL $API_URL)
-        echo $NEW_IP $response
-        if [[ "$response" == *"200"* ]]; then
-          echo "$NEW_IP is able to Ping...OK"
-          echo "NEW_IP=$NEW_IP" >> $GITHUB_ENV
-        else
-          echo "$NEW_IP is NOT able to Ping, EC2 Reconfiguring..."
-          sleep 5
-        fi
 
     - name: Get Cloudflare DNS Record ID
       if: env.REACHABLE == 'false'
       run: |
+        # 使用cURL调用Cloudflare API获取DNS记录ID
         DNS_RECORDS=$(curl -s -X GET "https://api.cloudflare.com/client/v4/zones/${{ env.CF_ZONE_ID }}/dns_records?name=${{ env.DOMAIN }}" \
           -H "Authorization: Bearer ${{ env.CF_API_TOKEN }}" \
           -H "Content-Type: application/json")
@@ -102,12 +87,14 @@ jobs:
     - name: Update DNS Record
       if: env.REACHABLE == 'false'
       run: |
+        # 构建cURL请求命令，使用先前获取到的DNS_ID
         UPDATE_CMD=$(echo -n "{\"type\":\"A\",\"name\":\"${{ env.DOMAIN }}\",\"content\":\"$NEW_IP\",\"proxied\":${{ env.PROXIED }}}")
         curl -X PUT "https://api.cloudflare.com/client/v4/zones/${{ env.CF_ZONE_ID }}/dns_records/${{ env.DNS_ID }}" \
           -H "Authorization: Bearer ${{ env.CF_API_TOKEN }}" \
           -H "Content-Type: application/json" \
           --data-raw "$UPDATE_CMD"
 
+        # 检查响应状态
         RESPONSE=$(curl -s -o /dev/null -w "%{http_code}" "https://api.cloudflare.com/client/v4/zones/${{ env.CF_ZONE_ID }}/dns_records/${{ env.DNS_ID }}" \
           -H "Authorization: Bearer ${{ env.CF_API_TOKEN }}" \
           -H "Content-Type: application/json")
