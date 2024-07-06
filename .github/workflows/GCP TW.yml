@@ -80,16 +80,16 @@ jobs:
             # echo "::set-output name=current_access_config_name::$CURRENT_ACCESS_CONFIG_NAME"
             # echo "CURRENT_ACCESS_CONFIG_NAME=$CURRENT_ACCESS_CONFIG_NAME" >> $GITHUB_ENV
             # echo "New Access Config Name is $CURRENT_ACCESS_CONFIG_NAME"
-            gcloud compute instances delete-access-config ${{ env.GCP_VM_NAME }} --access-config-name="external-nat" --zone=${{ env.GCP_VM_ZONE }}
-            while true; do
-                STATUS=$(gcloud compute instances describe ${{ env.GCP_VM_NAME }} --zone=${{ env.GCP_VM_ZONE }} --project=${{ env.GCP_PROJECT_ID }} --format='value(status)')
-                if [ "$STATUS" = "RUNNING" ]; then
-                    echo "instance is updating new config..."
-                    break
-                fi
-                echo "Waiting for instance to be running..."
-                sleep 10
-            done
+            # gcloud compute instances delete-access-config ${{ env.GCP_VM_NAME }} --access-config-name="external-nat" --zone=${{ env.GCP_VM_ZONE }}
+            # while true; do
+                # STATUS=$(gcloud compute instances describe ${{ env.GCP_VM_NAME }} --zone=${{ env.GCP_VM_ZONE }} --project=${{ env.GCP_PROJECT_ID }} --format='value(status)')
+                # if [ "$STATUS" = "RUNNING" ]; then
+                #     echo "instance is updating new config..."
+                #     break
+                # fi
+                # echo "Waiting for instance to be running..."
+                # sleep 10
+            # done
             gcloud compute instances add-access-config ${{ env.GCP_VM_NAME }} --zone=${{ env.GCP_VM_ZONE }}
             NEW_IP=$(gcloud compute instances describe "${{ env.GCP_VM_NAME }}" --zone="${{ env.GCP_VM_ZONE }}" --format='value(networkInterfaces[0].accessConfigs[0].natIP)')
             echo "::set-output name=new_ip::$NEW_IP"
