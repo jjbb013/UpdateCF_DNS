@@ -75,36 +75,58 @@ jobs:
       if: env.REACHABLE == 'false'
       id: reconfig_vm_and_test_ip
       run: |
-        while true; do
-            # CURRENT_ACCESS_CONFIG_NAME=$(gcloud compute instances describe ${{ env.GCP_VM_NAME }} --zone=${{ env.GCP_VM_ZONE }} --format 'value[separator=": "](networkInterfaces[0].accessConfigs[0].name)')
-            # echo "::set-output name=current_access_config_name::$CURRENT_ACCESS_CONFIG_NAME"
-            # echo "CURRENT_ACCESS_CONFIG_NAME=$CURRENT_ACCESS_CONFIG_NAME" >> $GITHUB_ENV
-            # echo "New Access Config Name is $CURRENT_ACCESS_CONFIG_NAME"
-            # gcloud compute instances delete-access-config ${{ env.GCP_VM_NAME }} --access-config-name="external-nat" --zone=${{ env.GCP_VM_ZONE }}
-            # while true; do
-                # STATUS=$(gcloud compute instances describe ${{ env.GCP_VM_NAME }} --zone=${{ env.GCP_VM_ZONE }} --project=${{ env.GCP_PROJECT_ID }} --format='value(status)')
-                # if [ "$STATUS" = "RUNNING" ]; then
-                #     echo "instance is updating new config..."
-                #     break
-                # fi
-                # echo "Waiting for instance to be running..."
-                # sleep 10
-            # done
-            gcloud compute instances add-access-config ${{ env.GCP_VM_NAME }} --zone=${{ env.GCP_VM_ZONE }}
-            NEW_IP=$(gcloud compute instances describe "${{ env.GCP_VM_NAME }}" --zone="${{ env.GCP_VM_ZONE }}" --format='value(networkInterfaces[0].accessConfigs[0].natIP)')
+        retry_count=0
+        max_retries=3
+        
+        while (( retry_count < max_retries )); do
+            CURRENT_ACCESS_CONFIG_NAME=$(gcloud compute instances describe "${GCP_VM_NAME}" --zone="${GCP_VM_ZONE}" --format 'value[separator=": "](networkInterfaces[0].accessConfigs[0].name)')
+            echo "::set-output name=current_access_config_name::$CURRENT_ACCESS_CONFIG_NAME"
+            echo "CURRENT_ACCESS_CONFIG_NAME=$CURRENT_ACCESS_CONFIG_NAME" >> $GITHUB_ENV
+            echo "New Access Config Name is $CURRENT_ACCESS_CONFIG_NAME"
+        
+            gcloud compute instances delete-access-config "${GCP_VM_NAME}" --access-config-name="$CURRENT_ACCESS_CONFIG_NAME" --zone="${GCP_VM_ZONE}"
+        
+            # 内部循环也改为有最大重试次数的循环
+            status_retry_count=0
+            while (( status_retry_count < max_retries )); do
+                STATUS=$(gcloud compute instances describe "${GCP_VM_NAME}" --zone="${GCP_VM_ZONE}" --project="${GCP_PROJECT_ID}" --format='value(status)')
+                if [ "$STATUS" = "RUNNING" ]; then
+                    echo "instance is updating new config..."
+                    break
+                else
+                    echo "Waiting for instance to be running..."
+                    sleep 10
+                    ((status_retry_count++))
+                    if (( status_retry_count >= max_retries )); then
+                        echo "Reached max retries waiting for VM to become RUNNING."
+                        exit 1
+                    fi
+                fi
+            done
+        
+            gcloud compute instances add-access-config "${GCP_VM_NAME}" --zone="${GCP_VM_ZONE}"
+        
+            NEW_IP=$(gcloud compute instances describe "${GCP_VM_NAME}" --zone="${GCP_VM_ZONE}" --format='value(networkInterfaces[0].accessConfigs[0].natIP)')
             echo "::set-output name=new_ip::$NEW_IP"
             echo "New IP is $NEW_IP"
+        
             API_URL="https://v2.api-m.com/api/tcping?address=$NEW_IP&port=1081"
-            response=$(curl -sL $API_URL)
-            echo $NEW_IP $response
-            if [[ "$response" == *"200"* ]]; then
-              echo "$NEW_IP is able to Ping...OK"
-              echo "NEW_IP=$NEW_IP" >> $GITHUB_ENV
-              break
+            response=$(curl -sL "$API_URL")
+            echo "$NEW_IP $response"
+        
+            if [[ "$response" == *"连接成功"* ]]; then
+                echo "$NEW_IP is able to Ping...OK"
+                echo "NEW_IP=$NEW_IP" >> $GITHUB_ENV
+                exit 0
+            else
+                echo "$NEW_IP is NOT able to Ping, VM Reconfiguring..."
+                ((retry_count++))
+                sleep 5
             fi
-            echo "$NEW_IP is NOT able to Ping, VM Reconfiging..."
-            sleep 5
-         done
+        done
+        
+        echo "Reached maximum retries, unable to configure VM."
+        exit 1
 
     - name: Get Cloudflare DNS Record ID
       if: env.REACHABLE == 'false'
