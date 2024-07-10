@@ -85,14 +85,18 @@ jobs:
             echo "CURRENT_ACCESS_CONFIG_NAME=$CURRENT_ACCESS_CONFIG_NAME" >> $GITHUB_ENV
             echo "Access Config Name is $CURRENT_ACCESS_CONFIG_NAME"
             #删除当前配置文件
+            echo "正在删除当前配置文件.."
             gcloud compute instances delete-access-config "${GCP_VM_NAME}" --access-config-name="$CURRENT_ACCESS_CONFIG_NAME" --zone="${GCP_VM_ZONE}"
             #添加新配置文件
+            echo "正在创建新配置文件.."
             gcloud compute instances add-access-config "${GCP_VM_NAME}" --zone="${GCP_VM_ZONE}"
             #获取新的IP地址
+            echo "正在获取新的VM IPv4地址.."
             NEW_IP=$(gcloud compute instances describe "${GCP_VM_NAME}" --zone="${GCP_VM_ZONE}" --format='value(networkInterfaces[0].accessConfigs[0].natIP)')
             echo "::set-output name=new_ip::$NEW_IP"
             echo "New IP is $NEW_IP"
             #测试新的IP地址可用性
+            echo "正在测试IP可用性.."
             API_URL="https://v2.api-m.com/api/tcping?address=$NEW_IP&port=1081"
             response=$(curl -sL "$API_URL")
             echo "$NEW_IP $response"
@@ -109,6 +113,8 @@ jobs:
         done
         #尝试3次，无法获取可用IP，等待3小时后再试
         echo "Reached maximum retries, unable to configure VM."
+        #将最后一次获取的IP传输到环境变量来执行后续步骤
+        echo "NEW_IP=$NEW_IP" >> $GITHUB_ENV
         
 
 
