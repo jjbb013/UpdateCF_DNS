@@ -79,54 +79,42 @@ jobs:
         max_retries=3
         
         while (( retry_count < max_retries )); do
+            #获取当前配置文件的名称
             CURRENT_ACCESS_CONFIG_NAME=$(gcloud compute instances describe "${GCP_VM_NAME}" --zone="${GCP_VM_ZONE}" --format 'value[separator=": "](networkInterfaces[0].accessConfigs[0].name)')
             echo "::set-output name=current_access_config_name::$CURRENT_ACCESS_CONFIG_NAME"
             echo "CURRENT_ACCESS_CONFIG_NAME=$CURRENT_ACCESS_CONFIG_NAME" >> $GITHUB_ENV
             echo "Access Config Name is $CURRENT_ACCESS_CONFIG_NAME"
-        
+            #删除当前配置文件
+            echo "正在删除当前配置文件.."
             gcloud compute instances delete-access-config "${GCP_VM_NAME}" --access-config-name="$CURRENT_ACCESS_CONFIG_NAME" --zone="${GCP_VM_ZONE}"
-        
-            # 内部循环也改为有最大重试次数的循环
-            status_retry_count=0
-            while (( status_retry_count < max_retries )); do
-                STATUS=$(gcloud compute instances describe "${GCP_VM_NAME}" --zone="${GCP_VM_ZONE}" --project="${GCP_PROJECT_ID}" --format='value(status)')
-                if [ "$STATUS" = "RUNNING" ]; then
-                    echo "instance is updating new config..."
-                    break
-                else
-                    echo "Waiting for instance to be running..."
-                    sleep 10
-                    ((status_retry_count++))
-                    if (( status_retry_count >= max_retries )); then
-                        echo "Reached max retries waiting for VM to become RUNNING."
-                        exit 1
-                    fi
-                fi
-            done
-        
+            #添加新配置文件
+            echo "正在创建新配置文件.."
             gcloud compute instances add-access-config "${GCP_VM_NAME}" --zone="${GCP_VM_ZONE}"
-        
+            #获取新的IP地址
+            echo "正在获取新的VM IPv4地址.."
             NEW_IP=$(gcloud compute instances describe "${GCP_VM_NAME}" --zone="${GCP_VM_ZONE}" --format='value(networkInterfaces[0].accessConfigs[0].natIP)')
             echo "::set-output name=new_ip::$NEW_IP"
             echo "New IP is $NEW_IP"
-        
+            #测试新的IP地址可用性
+            echo "正在测试IP可用性.."
             API_URL="https://v2.api-m.com/api/tcping?address=$NEW_IP&port=1081"
             response=$(curl -sL "$API_URL")
             echo "$NEW_IP $response"
-        
+            #判断测试结果
             if [[ "$response" == *"200"* ]]; then
                 echo "$NEW_IP is able to Ping...OK"
                 echo "NEW_IP=$NEW_IP" >> $GITHUB_ENV
                 exit 0
             else
                 echo "$NEW_IP is NOT able to Ping, VM Reconfiguring..."
-                ((retry_count++))
+                ((retry_count+=1))
                 sleep 5
             fi
         done
-        
+        #尝试3次，无法获取可用IP，等待3小时后再试
         echo "Reached maximum retries, unable to configure VM."
-        exit 1
+        #将最后一次获取的IP传输到环境变量来执行后续步骤
+        echo "NEW_IP=$NEW_IP" >> $GITHUB_ENV
 
     - name: Get Cloudflare DNS Record ID
       if: env.REACHABLE == 'false'
