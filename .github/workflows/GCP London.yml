@@ -1,4 +1,4 @@
-name: GCP SG Check Connectivity and Update DNS
+name: GCP London Check Connectivity and Update DNS
 
 on:
   schedule:
