@@ -103,7 +103,7 @@ jobs:
                 exit 0
             else
                 echo "$NEW_IP is NOT able to Ping, VM Reconfiguring..."
-                ((retry_count++))
+                retry_count++
                 sleep 5
             fi
             #尝试3次，无法获取可用IP，等待3小时后再试
