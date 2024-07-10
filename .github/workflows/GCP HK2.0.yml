@@ -103,6 +103,30 @@ jobs:
                     fi
                 fi
             done
+        
+            gcloud compute instances add-access-config "${GCP_VM_NAME}" --zone="${GCP_VM_ZONE}"
+        
+            NEW_IP=$(gcloud compute instances describe "${GCP_VM_NAME}" --zone="${GCP_VM_ZONE}" --format='value(networkInterfaces[0].accessConfigs[0].natIP)')
+            echo "::set-output name=new_ip::$NEW_IP"
+            echo "New IP is $NEW_IP"
+        
+            API_URL="https://v2.api-m.com/api/tcping?address=$NEW_IP&port=1081"
+            response=$(curl -sL "$API_URL")
+            echo "$NEW_IP $response"
+        
+            if [[ "$response" == *"200"* ]]; then
+                echo "$NEW_IP is able to Ping...OK"
+                echo "NEW_IP=$NEW_IP" >> $GITHUB_ENV
+                exit 0
+            else
+                echo "$NEW_IP is NOT able to Ping, VM Reconfiguring..."
+                ((retry_count++))
+                sleep 5
+            fi
+        done
+        
+        echo "Reached maximum retries, unable to configure VM."
+        exit 1
 
     - name: Get Cloudflare DNS Record ID
       if: env.REACHABLE == 'false'
