@@ -14,7 +14,7 @@ jobs:
 
     - name: TCPing Check and Notify
       env:
-        DOMAINS: 'hk.nets.pp.ua,tw.nets.pp.ua,kr.nets.pp.ua,melbourne.nets.pp.ua,sydney.nets.pp.ua,ca.nets.pp.ua,osaka.onemorething.pp.ua,tokyo.onemorething.pp.ua,oregon.onemorething.pp.ua'
+        DOMAINS: 'hk.nets.pp.ua,tw.nets.pp.ua,kr.nets.pp.ua,melbourne.nets.pp.ua,sydney.nets.pp.ua,ca.nets.pp.ua,osaka.onemorething.pp.ua,tokyo.onemorething.pp.ua,oregon.onemorething.pp.ua,london.onemorething.pp.ua,sg.onemorething.pp.ua'
         BARK_URL: 'https://api.day.app/oZaeqGLJzRLSxW7dJqeACn/'
       run: |
         # 将域名列表分割成数组
