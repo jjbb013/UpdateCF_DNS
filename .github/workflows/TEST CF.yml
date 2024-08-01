@@ -1,0 +1,22 @@
+name: QA Manage Cloudflare DNS Record
+
+on:
+  # 触发条件可以根据需求设定，这里以workflow_dispatch为例，代表手动触发
+  workflow_dispatch:
+env:
+  CF_ZONE_ID: b2fc014bf87f67714afb1b9c10941a2e # 从GitHub Secrets中获取Zone ID
+  CF_API_TOKEN: ${{ secrets.CF_API_TOKEN }} # 从GitHub Secrets中获取API Token
+  DNS_NAME: 'ca.nets.pp.ua' # 需要查询的DNS名称
+  NEW_IP: '54.193.209.97' # 新的IP地址
+  PROXIED: 'false' # 是否开启Cloudflare代理，默认否
+jobs:
+  manage_dns_record:
+    runs-on: ubuntu-latest
+    steps:
+    - name: Get Cloudflare DNS Record ID
+      run: |
+        # 使用cURL调用Cloudflare API获取DNS记录ID
+        DNS_RECORDS=$(curl -s -X GET "https://api.cloudflare.com/client/v4/zones/b2fc014bf87f67714afb1b9c10941a2e/dns_records?name=melbourne.nets.pp.ua" \
+          -H "Authorization: Bearer ${CF_API_TOKEN}" \
+          -H "Content-Type: application/json")
+
