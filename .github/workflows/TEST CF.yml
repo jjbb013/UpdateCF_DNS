@@ -20,3 +20,9 @@ jobs:
           -H "Authorization: Bearer ${CF_API_TOKEN}" \
           -H "Content-Type: application/json")
 
+        if [[ $(echo "${DNS_RECORDS}" | jq -r '.success') == "true" ]]; then
+          echo "API 调用成功。"
+        else
+          echo "API 调用失败: $(echo "${DNS_RECORDS}" | jq -r '.errors[].message')"
+          exit 1
+        fi
