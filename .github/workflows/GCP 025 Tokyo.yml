@@ -1,0 +1,166 @@
+name: GCP 025 Tokyo Check Connectivity and Update DNS
+
+on:
+  schedule:
+    - cron: '0 */3 * * *' # 每3小时运行一次
+  workflow_dispatch:
+
+env:
+  GCP_PROJECT_ID: sturdy-yen-432600-k2
+  GCP_SA_KEY: ${{ secrets.GCP_SA_KEY_025 }}
+  GCP_VM_ZONE: 'asia-northeast1-c'
+  GCP_VM_NAME: 'instance-tokyo'
+  DOMAIN: 'gcp.tokyo.onemorething.pp.ua'
+  CF_ZONE_ID: 1fa9774064820f53fe1733e37a19f721
+  PORT: 1081
+  PROXIED: 'false' # 是否开启Cloudflare代理，默认否
+  CF_API_TOKEN: ${{ secrets.CF_API_TOKEN }} # 从GitHub Secrets中获取API Token
+
+jobs:
+  ip_management:
+    runs-on: ubuntu-latest
+    steps:
+    - name: Check Domain Connectivity
+      id: check-connectivity
+      run: |
+        # 使用curl获取ping结果
+        API_URL="https://v2.api-m.com/api/tcping?address=${{env.DOMAIN}}&port=${{env.PORT}}"
+        response=$(curl -sL $API_URL)
+        echo ${{ env.DOMAIN }} $response
+        if [[ "$response" == *"200"* ]]; then
+          echo "Domain $Domain is reachable."
+          echo "REACHABLE=true" >> $GITHUB_ENV
+        else
+          echo "Domain $Domain is unreachable."
+          echo "REACHABLE=false" >> $GITHUB_ENV
+        fi
+        
+    - name: Checkout Repository
+      if: env.REACHABLE == 'false'
+      uses: actions/checkout@v2
+  
+    - name: Authentication
+      id: 'auth'
+      if: env.REACHABLE == 'false'
+      uses: 'google-github-actions/auth@v2'
+      with:
+        credentials_json: '${{ env.GCP_SA_KEY }}'
+
+    - name: 'Set up Cloud SDK'
+      if: env.REACHABLE == 'false'
+      uses: 'google-github-actions/setup-gcloud@v2'
+
+    - name: 'Use gcloud CLI'
+      if: env.REACHABLE == 'false'
+      run: 'gcloud info'
+
+    - name: Setup Google Cloud SDK
+      if: env.REACHABLE == 'false'
+      uses: google-github-actions/setup-gcloud@v2.1.0
+      with:
+        project_id: ${{ env.GCP_PROJECT_ID }}
+        service_account_key: ${{ env.GCP_SA_KEY }}
+        export_default_credentials: true
+
+    - name: Get Current VM External IP
+      if: env.REACHABLE == 'false'
+      id: get_current_ip
+      run: |
+        CURRENT_IP=$(gcloud compute instances describe ${{ env.GCP_VM_NAME }} --zone=${{ env.GCP_VM_ZONE }} --format='value(networkInterfaces[0].accessConfigs[0].natIP)')
+        echo "::set-output name=current_ip::$CURRENT_IP"
+        echo "Current IP is $CURRENT_IP"
+
+        
+    - name: Reconfig VM and Test IP
+      if: env.REACHABLE == 'false'
+      id: reconfig_vm_and_test_ip
+      run: |
+        retry_count=0
+        max_retries=3
+        
+        while (( retry_count < max_retries )); do
+            #获取当前配置文件的名称
+            CURRENT_ACCESS_CONFIG_NAME=$(gcloud compute instances describe "${GCP_VM_NAME}" --zone="${GCP_VM_ZONE}" --format 'value[separator=": "](networkInterfaces[0].accessConfigs[0].name)')
+            echo "::set-output name=current_access_config_name::$CURRENT_ACCESS_CONFIG_NAME"
+            echo "CURRENT_ACCESS_CONFIG_NAME=$CURRENT_ACCESS_CONFIG_NAME" >> $GITHUB_ENV
+            echo "Access Config Name is $CURRENT_ACCESS_CONFIG_NAME"
+            #删除当前配置文件
+            echo "正在删除当前配置文件.."
+            gcloud compute instances delete-access-config "${GCP_VM_NAME}" --access-config-name="$CURRENT_ACCESS_CONFIG_NAME" --zone="${GCP_VM_ZONE}"
+            #添加新配置文件
+            echo "正在创建新配置文件.."
+            gcloud compute instances add-access-config "${GCP_VM_NAME}" --zone="${GCP_VM_ZONE}"
+            #获取新的IP地址
+            echo "正在获取新的VM IPv4地址.."
+            NEW_IP=$(gcloud compute instances describe "${GCP_VM_NAME}" --zone="${GCP_VM_ZONE}" --format='value(networkInterfaces[0].accessConfigs[0].natIP)')
+            echo "::set-output name=new_ip::$NEW_IP"
+            echo "New IP is $NEW_IP"
+            #测试新的IP地址可用性
+            echo "正在测试IP可用性.."
+            API_URL="https://v2.api-m.com/api/tcping?address=$NEW_IP&port=1081"
+            response=$(curl -sL "$API_URL")
+            echo "$NEW_IP $response"
+            #判断测试结果
+            if [[ "$response" == *"200"* ]]; then
+                echo "$NEW_IP is able to Ping...OK"
+                echo "NEW_IP=$NEW_IP" >> $GITHUB_ENV
+                exit 0
+            else
+                echo "$NEW_IP is NOT able to Ping, VM Reconfiguring..."
+                ((retry_count+=1))
+                sleep 5
+            fi
+        done
+        #尝试3次，无法获取可用IP，等待3小时后再试
+        echo "Reached maximum retries, unable to configure VM."
+        #将最后一次获取的IP传输到环境变量来执行后续步骤
+        echo "NEW_IP=$NEW_IP" >> $GITHUB_ENV
+
+    - name: Get Cloudflare DNS Record ID
+      if: env.REACHABLE == 'false'
+      run: |
+        # 使用cURL调用Cloudflare API获取DNS记录ID
+        DNS_RECORDS=$(curl -s -X GET "https://api.cloudflare.com/client/v4/zones/${{ env.CF_ZONE_ID }}/dns_records?name=${{ env.DOMAIN }}" \
+          -H "Authorization: Bearer ${{ env.CF_API_TOKEN }}" \
+          -H "Content-Type: application/json")
+        DNS_ID=$(echo "${DNS_RECORDS}" | jq -r '.result[] | select(.name == "'${{ env.DOMAIN }}'") | .id')
+        if [ -z "$DNS_ID" ]; then
+          echo "No DNS record found for ${{ env.DOMAIN }}"
+          exit 1
+        else
+          echo "DNS Record ID for ${{ env.DOMAIN }}: $DNS_ID"
+          echo "DNS_ID=$DNS_ID" >> $GITHUB_ENV
+        fi
+
+    - name: Update DNS Record
+      if: env.REACHABLE == 'false'
+      run: |
+        # 构建cURL请求命令，使用先前获取到的DNS_ID
+        UPDATE_CMD=$(echo -n "{\"type\":\"A\",\"name\":\"${{ env.DOMAIN }}\",\"content\":\"$NEW_IP\",\"proxied\":${{ env.PROXIED }}}")
+        curl -X PUT "https://api.cloudflare.com/client/v4/zones/${{ env.CF_ZONE_ID }}/dns_records/${{ env.DNS_ID }}" \
+          -H "Authorization: Bearer ${{ env.CF_API_TOKEN }}" \
+          -H "Content-Type: application/json" \
+          --data-raw "$UPDATE_CMD"
+
+        # 检查响应状态
+        RESPONSE=$(curl -s -o /dev/null -w "%{http_code}" "https://api.cloudflare.com/client/v4/zones/${{ env.CF_ZONE_ID }}/dns_records/${{ env.DNS_ID }}" \
+          -H "Authorization: Bearer ${{ env.CF_API_TOKEN }}" \
+          -H "Content-Type: application/json")
+
+        if [ "$RESPONSE" -eq 200 ]; then
+          echo "DNS record updated successfully."
+        else
+          echo "Failed to update DNS record. Response code: $RESPONSE"
+          exit 1
+        fi
+
+    - name: Log Summary
+      if: always()
+      run: |
+        if [ "${{ env.REACHABLE }}" == 'true' ]; then
+          echo "Summary: Domain was reachable. No action taken."
+        elif [ -n "$NEW_IP" ]; then
+          echo "Summary: DNS record updated to $NEW_IP after instance restart."
+        else
+          echo "Summary: Unexpected error occurred. No DNS update performed."
+        fi
