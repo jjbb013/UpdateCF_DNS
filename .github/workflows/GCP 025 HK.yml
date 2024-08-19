@@ -36,26 +36,26 @@ jobs:
         fi
         
     - name: Checkout Repository
-      if: env.REACHABLE == 'true'
+      if: env.REACHABLE == 'false'
       uses: actions/checkout@v2
   
     - name: Authentication
       id: 'auth'
-      if: env.REACHABLE == 'true'
+      if: env.REACHABLE == 'false'
       uses: 'google-github-actions/auth@v2'
       with:
         credentials_json: '${{ env.GCP_SA_KEY }}'
 
     - name: 'Set up Cloud SDK'
-      if: env.REACHABLE == 'true'
+      if: env.REACHABLE == 'false'
       uses: 'google-github-actions/setup-gcloud@v2'
 
     - name: 'Use gcloud CLI'
-      if: env.REACHABLE == 'true'
+      if: env.REACHABLE == 'false'
       run: 'gcloud info'
 
     - name: Setup Google Cloud SDK
-      if: env.REACHABLE == 'true'
+      if: env.REACHABLE == 'false'
       uses: google-github-actions/setup-gcloud@v2.1.0
       with:
         project_id: ${{ env.GCP_PROJECT_ID }}
@@ -63,7 +63,7 @@ jobs:
         export_default_credentials: true
 
     - name: Get Current VM External IP
-      if: env.REACHABLE == 'true'
+      if: env.REACHABLE == 'false'
       id: get_current_ip
       run: |
         CURRENT_IP=$(gcloud compute instances describe ${{ env.GCP_VM_NAME }} --zone=${{ env.GCP_VM_ZONE }} --format='value(networkInterfaces[0].accessConfigs[0].natIP)')
@@ -72,7 +72,7 @@ jobs:
 
         
     - name: Reconfig VM and Test IP
-      if: env.REACHABLE == 'true'
+      if: env.REACHABLE == 'false'
       id: reconfig_vm_and_test_ip
       run: |
         retry_count=0
@@ -117,7 +117,7 @@ jobs:
         echo "NEW_IP=$NEW_IP" >> $GITHUB_ENV
 
     - name: Get Cloudflare DNS Record ID
-      if: env.REACHABLE == 'true'
+      if: env.REACHABLE == 'false'
       run: |
         # 使用cURL调用Cloudflare API获取DNS记录ID
         DNS_RECORDS=$(curl -s -X GET "https://api.cloudflare.com/client/v4/zones/${{ env.CF_ZONE_ID }}/dns_records?name=${{ env.DOMAIN }}" \
@@ -133,7 +133,7 @@ jobs:
         fi
 
     - name: Update DNS Record
-      if: env.REACHABLE == 'true'
+      if: env.REACHABLE == 'false'
       run: |
         # 构建cURL请求命令，使用先前获取到的DNS_ID
         UPDATE_CMD=$(echo -n "{\"type\":\"A\",\"name\":\"${{ env.DOMAIN }}\",\"content\":\"$NEW_IP\",\"proxied\":${{ env.PROXIED }}}")
