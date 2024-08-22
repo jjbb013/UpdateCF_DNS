@@ -10,7 +10,7 @@ env:
   GCP_SA_KEY: ${{ secrets.GCP_SA_KEY_025 }}
   GCP_VM_ZONE: 'asia-east1-c'
   GCP_VM_NAME: 'instance-tw'
-  DOMAIN: 'tw.onemorething.pp.ua'
+  DOMAIN: 'gcp.tw.onemorething.pp.ua'
   CF_ZONE_ID: 1fa9774064820f53fe1733e37a19f721
   PORT: 1081
   PROXIED: 'false' # 是否开启Cloudflare代理，默认否
