@@ -1,0 +1,8 @@
+name: 'Caller Workflow'
+on:
+  workflow_dispatch:
+jobs:
+  call-workflow:
+    uses: ./.github/workflows/Check Domain Connectivity.yml
+    with:
+      domain: 'www.baidu.com'
