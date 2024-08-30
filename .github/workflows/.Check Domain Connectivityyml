@@ -1,0 +1,25 @@
+name: 'Check Domain Connectivity'
+on:
+  workflow_call:
+    inputs:
+      domain:
+        required: true
+        type: string
+
+jobs:
+  check-connectivity:
+    runs-on: ubuntu-latest
+    steps:
+      - name: check-connectivity
+        run: |
+          # 使用curl获取ping结果
+          API_URL="https://v2.api-m.com/api/tcping?address=${{ inputs.domain }}&port=1081"
+          response=$(curl -sL $API_URL)
+          echo ${{ inputs.domain }} $response
+          if [[ "$response" == *"200"* ]]; then
+            echo "Domain $Domain is reachable."
+            echo "REACHABLE=true" >> $GITHUB_ENV
+          else
+            echo "Domain $Domain is unreachable."
+            echo "REACHABLE=false" >> $GITHUB_ENV
+          fi
