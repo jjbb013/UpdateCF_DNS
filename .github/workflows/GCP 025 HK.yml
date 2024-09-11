@@ -1,8 +1,8 @@
 name: GCP 025 HK Check Connectivity and Update DNS
 
 on:
-  schedule:
-    - cron: '0 */3 * * *' # 每3小时运行一次
+  #schedule:
+  #  - cron: '0 */3 * * *' # 每3小时运行一次
   workflow_dispatch:
 
 env:
