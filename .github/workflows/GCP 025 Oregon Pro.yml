@@ -123,6 +123,21 @@ jobs:
         for STATIC_IP in "${static_ips[@]}"; do
             gcloud compute addresses delete $STATIC_IP --region=$region
         done
+    - name: Get Cloudflare DNS Record ID
+      if: env.REACHABLE == 'false'
+      run: |
+        # 使用cURL调用Cloudflare API获取DNS记录ID
+        DNS_RECORDS=$(curl -s -X GET "https://api.cloudflare.com/client/v4/zones/${{ env.CF_ZONE_ID }}/dns_records?name=${{ env.DOMAIN }}" \
+          -H "Authorization: Bearer ${{ env.CF_API_TOKEN }}" \
+          -H "Content-Type: application/json")
+        DNS_ID=$(echo "${DNS_RECORDS}" | jq -r '.result[] | select(.name == "'${{ env.DOMAIN }}'") | .id')
+        if [ -z "$DNS_ID" ]; then
+          echo "No DNS record found for ${{ env.DOMAIN }}"
+          exit 1
+        else
+          echo "DNS Record ID for ${{ env.DOMAIN }}: $DNS_ID"
+          echo "DNS_ID=$DNS_ID" >> $GITHUB_ENV
+        fi
     - name: Update DNS Record
       if: env.REACHABLE == 'false'
       run: |
