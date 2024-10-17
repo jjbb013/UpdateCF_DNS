@@ -10,7 +10,7 @@ env:
   GCP_VM_NAME: 'instance-india'
   GCP_REGION: 'asia-south1'
   DOMAIN: 'gcp.india.onemorething.pp.ua'
-  CF_ZONE_ID: b2fc014bf87f67714afb1b9c10941a2e
+  CF_ZONE_ID: 1fa9774064820f53fe1733e37a19f721
   PORT: 1081
   PROXIED: 'false' # 是否开启Cloudflare代理，默认否
   CF_API_TOKEN: ${{ secrets.CF_API_TOKEN }} # 从GitHub Secrets中获取API Token
@@ -74,10 +74,12 @@ jobs:
       id: reconfig_vm_and_test_ip
       run: |
         retry_count=0
-        max_retries=3
+        max_retries=5
         vm_name=${{ env.GCP_VM_NAME }}
         vm_zone=${{ env.GCP_VM_ZONE }}
         region=${{ env.GCP_REGION }}
+        # 用于存储所有创建的静态IP名称
+        static_ips=()
 
         while (( retry_count < max_retries )); do
             # Step 1: Promote to static and name it
@@ -85,7 +87,8 @@ jobs:
             CURRENT_ACCESS_CONFIG_NAME=$(gcloud compute instances describe "${GCP_VM_NAME}" --zone="${GCP_VM_ZONE}" --format 'value[separator=": "](networkInterfaces[0].accessConfigs[0].name)')
             STATIC_IP_NAME="${vm_name}$(printf "%02d" $((retry_count + 1)))"
             gcloud compute addresses create $STATIC_IP_NAME --addresses=$CURRENT_IP --region=$region
-
+            # 将当前静态IP添加到数组中
+            static_ips+=("$STATIC_IP_NAME")
         
             # Step 2: Remove the static IP from the VM
             gcloud compute instances delete-access-config $vm_name --zone=$vm_zone --access-config-name=$CURRENT_ACCESS_CONFIG_NAME
@@ -116,9 +119,8 @@ jobs:
         fi
         
         # Step 6: Release all created static IPs
-        for i in $(seq 1 $retry_count); do
-            STATIC_IP_NAME="${vm_name}$(printf "%02d" $i)"
-            gcloud compute addresses delete $STATIC_IP_NAME --region=$region
+        for STATIC_IP in "${static_ips[@]}"; do
+            gcloud compute addresses delete $STATIC_IP --region=$region
         done
 
     - name: Update DNS Record
