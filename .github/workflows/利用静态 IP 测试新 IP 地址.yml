@@ -1,4 +1,4 @@
-name: QA GCP VM IP 利用静态 IP 测试新 IP 地址
+name: 测试GCP利用静态IP更新服务器IP
 
 on:
   workflow_dispatch:
@@ -82,12 +82,13 @@ jobs:
         while (( retry_count < max_retries )); do
             # Step 1: Promote to static and name it
             CURRENT_IP=$(gcloud compute instances describe $vm_name --zone=$vm_zone --format='value(networkInterfaces[0].accessConfigs[0].natIP)')
+            CURRENT_ACCESS_CONFIG_NAME=$(gcloud compute instances describe "${GCP_VM_NAME}" --zone="${GCP_VM_ZONE}" --format 'value[separator=": "](networkInterfaces[0].accessConfigs[0].name)')
             STATIC_IP_NAME="${vm_name}$(printf "%02d" $((retry_count + 1)))"
             gcloud compute addresses create $STATIC_IP_NAME --addresses=$CURRENT_IP --region=$region
 
         
             # Step 2: Remove the static IP from the VM
-            gcloud compute instances delete-access-config $vm_name --zone=$vm_zone --access-config-name="External NAT"
+            gcloud compute instances delete-access-config $vm_name --zone=$vm_zone --access-config-name=$CURRENT_ACCESS_CONFIG_NAME
 
         
             # Step 3: Get new IP and test
