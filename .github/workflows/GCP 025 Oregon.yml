@@ -8,7 +8,7 @@ on:
 env:
   GCP_PROJECT_ID: sturdy-yen-432600-k2
   GCP_SA_KEY: ${{ secrets.GCP_SA_KEY_025 }}
-  GCP_VM_ZONE: 'us-west1-c'
+  GCP_VM_ZONE: 'us-west1-b'
   GCP_VM_NAME: 'instance-oregon'
   DOMAIN: 'gcp.oregon.onemorething.pp.ua'
   CF_ZONE_ID: 1fa9774064820f53fe1733e37a19f721
