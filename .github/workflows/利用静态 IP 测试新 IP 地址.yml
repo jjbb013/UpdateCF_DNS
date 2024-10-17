@@ -84,7 +84,7 @@ jobs:
             CURRENT_IP=$(gcloud compute instances describe $vm_name --zone=$vm_zone --format='value(networkInterfaces[0].accessConfigs[0].natIP)')
             STATIC_IP_NAME="${vm_name}$(printf "%02d" $((retry_count + 1)))"
             gcloud compute addresses create $STATIC_IP_NAME --addresses=$CURRENT_IP --region=$region
-            gcloud compute instances add-access-config $vm_name --zone=$vm_zone --access-config-name="external-nat" --address=$CURRENT_IP
+
         
             # Step 2: Remove the static IP from the VM
             gcloud compute instances delete-access-config $vm_name --zone=$vm_zone --access-config-name="external-nat"
