@@ -91,6 +91,7 @@ jobs:
 
         
             # Step 3: Get new IP and test
+            gcloud compute instances add-access-config $vm_name --zone=$vm_zone
             NEW_IP=$(gcloud compute instances describe $vm_name --zone=$vm_zone --format='value(networkInterfaces[0].accessConfigs[0].natIP)')
             API_URL="https://v2.api-m.com/api/tcping?address=$NEW_IP&port=1081"
             response=$(curl -sL "$API_URL")
