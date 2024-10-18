@@ -1,0 +1,135 @@
+name: AWS Tokyo Pro
+
+on:
+  workflow_dispatch:
+
+env:
+  INSTANCE_ID: i-0e847507a4ed7e836
+  REGION: ap-northeast-1
+  DOMAIN: 'aws.tokyo.onemorething.pp.ua' # 需要查询的DNS名称
+  CF_ZONE_ID: 1fa9774064820f53fe1733e37a19f721
+  CF_API_TOKEN: ${{ secrets.CF_API_TOKEN }} # 从GitHub Secrets中获取API Token
+  PROXIED: 'false' # 是否开启Cloudflare代理，默认否
+  MAX_RETRIES: 5
+
+jobs:
+  healthcheck_and_manage_ec2:
+    runs-on: ubuntu-latest
+    steps:
+    - name: Configure AWS Credentials
+      uses: aws-actions/configure-aws-credentials@v1
+      with:
+        aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID_Tokyo }}
+        aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY_Tokyo }}
+        aws-region: ${{ env.REGION }}
+
+    - name: Check Current IP and Connectivity
+      id: check_ip
+      run: |
+        CURRENT_IP=$(aws ec2 describe-instances --instance-ids ${{ env.INSTANCE_ID }} --region ${{ env.REGION }} --query 'Reservations[0].Instances[0].PublicIpAddress' --output text)
+        echo "Current Public IP: $CURRENT_IP"
+        echo "CURRENT_IP=$CURRENT_IP" >> $GITHUB_ENV
+
+        API_URL="https://api.jaxing.cc/v2/Tcping?host=${CURRENT_IP}&port=1081"
+        response=$(curl -s $API_URL)
+        
+        echo "Response: $response"
+        if [[ $response == *'"msg":"请求成功"'* ]]; then
+          # 检查 "data" 中是否有 "dial tcp" 报错信息
+          if echo $response | grep -q '"dial tcp'; then
+            echo "Current IP is NOT pingable."
+            echo "pingable=false" >> $GITHUB_ENV
+          else
+            echo "Current IP is pingable."
+            echo "pingable=true" >> $GITHUB_ENV
+          fi
+        else
+          echo "TCPing 请求失败，未收到成功消息。"
+          echo "pingable=false" >> $GITHUB_ENV
+        fi
+
+    - name: Restart EC2 Instance if Necessary
+      if: env.pingable == 'false'
+      run: |
+        for (( i=1; i<=${{ env.MAX_RETRIES }}; i++ )); do
+          echo "Attempt $i to restart EC2 instance..."
+          aws ec2 stop-instances --instance-ids ${{ env.INSTANCE_ID }} --region ${{ env.REGION }}
+          echo "Waiting for EC2 instance to stop..."
+          aws ec2 wait instance-stopped --instance-ids ${{ env.INSTANCE_ID }} --region ${{ env.REGION }}
+          
+          echo "Waiting 10 seconds before starting the instance again..."
+          sleep 10
+          
+          echo "Starting EC2 instance..."
+          aws ec2 start-instances --instance-ids ${{ env.INSTANCE_ID }} --region ${{ env.REGION }}
+          echo "Waiting for EC2 instance to start..."
+          aws ec2 wait instance-running --instance-ids ${{ env.INSTANCE_ID }} --region ${{ env.REGION }}
+
+          # 获取新的IP并检查可达性
+          NEW_IP=$(aws ec2 describe-instances --instance-ids ${{ env.INSTANCE_ID }} --region ${{ env.REGION }} --query 'Reservations[0].Instances[0].PublicIpAddress' --output text)
+          echo "New Public IP: $NEW_IP"
+          
+          API_URL="https://api.jaxing.cc/v2/Tcping?host=${NEW_IP}&port=1081"
+          response=$(curl -s $API_URL)
+          
+          echo "Response: $response"
+          if [[ $response == *'"msg":"请求成功"'* ]]; then
+            if echo $response | grep -q '"dial tcp'; then
+              echo "New IP is NOT pingable."
+              if [ $i -eq ${{ env.MAX_RETRIES }} ]; then
+                echo "Max retries reached. Exiting."
+                exit 1
+              fi
+            else
+              echo "New IP is pingable."
+              echo "NEW_IP=$NEW_IP" >> $GITHUB_ENV
+              break
+            fi
+          else
+            echo "TCPing 请求失败，未收到成功消息。"
+            if [ $i -eq ${{ env.MAX_RETRIES }} ]; then
+              echo "Max retries reached. Exiting."
+              exit 1
+            fi
+          fi
+
+          sleep 5 # 等待一段时间再重试
+        done
+
+    - name: Get Cloudflare DNS Record ID
+      if: env.pingable == 'true'
+      run: |
+        DNS_RECORDS=$(curl -s -X GET "https://api.cloudflare.com/client/v4/zones/${{ env.CF_ZONE_ID }}/dns_records?name=${{ env.DOMAIN }}" \
+          -H "Authorization: Bearer ${{ env.CF_API_TOKEN }}" \
+          -H "Content-Type: application/json")
+        DNS_ID=$(echo "${DNS_RECORDS}" | jq -r '.result[] | select(.name == "'${{ env.DOMAIN }}'") | .id')
+        
+        if [ -z "$DNS_ID" ]; then
+          echo "No DNS record found for ${{ env.DOMAIN }}"
+          exit 1
+        else
+          echo "DNS Record ID for ${{ env.DOMAIN }}: $DNS_ID"
+          echo "DNS_ID=$DNS_ID" >> $GITHUB_ENV
+        fi
+
+    - name: Update DNS Record
+      if: env.pingable == 'true'
+      run: |
+        NEW_IP=${{ env.NEW_IP }}
+        echo "Updating DNS record with new IP..."
+        UPDATE_CMD=$(echo -n "{\"type\":\"A\",\"name\":\"${{ env.DOMAIN }}\",\"content\":\"$NEW_IP\",\"proxied\":${{ env.PROXIED }}}")
+        curl -X PUT "https://api.cloudflare.com/client/v4/zones/${{ env.CF_ZONE_ID }}/dns_records/${{ env.DNS_ID }}" \
+          -H "Authorization: Bearer ${{ env.CF_API_TOKEN }}" \
+          -H "Content-Type: application/json" \
+          --data-raw "$UPDATE_CMD"
+
+        RESPONSE=$(curl -s -o /dev/null -w "%{http_code}" "https://api.cloudflare.com/client/v4/zones/${{ env.CF_ZONE_ID }}/dns_records/${{ env.DNS_ID }}" \
+          -H "Authorization: Bearer ${{ env.CF_API_TOKEN }}" \
+          -H "Content-Type: application/json")
+
+        if [ "$RESPONSE" -eq 200 ]; then
+          echo "DNS record updated successfully."
+        else
+          echo "Failed to update DNS record. Response code: $RESPONSE"
+          exit 1
+        fi
