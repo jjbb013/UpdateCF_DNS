@@ -68,7 +68,7 @@ jobs:
           # 获取新的IP并检查可达性
           NEW_IP=$(aws ec2 describe-instances --instance-ids ${{ env.INSTANCE_ID }} --region ${{ env.REGION }} --query 'Reservations[0].Instances[0].PublicIpAddress' --output text)
           echo "New Public IP: $NEW_IP"
-          
+          sleep 30
           API_URL="https://api.jaxing.cc/v2/Tcping?host=${NEW_IP}&port=1081"
           response=$(curl -s $API_URL)
           
