@@ -32,7 +32,7 @@ jobs:
         echo "CURRENT_IP=$CURRENT_IP" >> $GITHUB_ENV
 
         API_URL="https://v2.api-m.com/api/tcping?address=${{ env.CURRENT_IP }}&port=1081"
-        response=$(curl -sL $API_URL)
+        response=$(curl -s $API_URL)
         
         if [[ $response == *"200"* ]]; then
           echo "Current IP is pingable."
