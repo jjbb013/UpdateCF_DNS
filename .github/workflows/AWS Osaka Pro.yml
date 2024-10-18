@@ -1,7 +1,6 @@
 name: AWS Osaka Pro
+
 on:
-  #schedule:
-  #  - cron: '0 */3 * * *' # 每3小时执行一次
   workflow_dispatch:
 
 env:
@@ -31,22 +30,28 @@ jobs:
         echo "Current Public IP: $CURRENT_IP"
         echo "CURRENT_IP=$CURRENT_IP" >> $GITHUB_ENV
 
-        API_URL="https://api.jaxing.cc/v2/Tcping?host=${{ env.CURRENT_IP }}&port=1081"
+        API_URL="https://api.jaxing.cc/v2/Tcping?host=${CURRENT_IP}&port=1081"
         response=$(curl -s $API_URL)
         
-        if [[ $response == *"200"* ]]; then
-          echo "Current IP is pingable."
-          echo "::set-output name=pingable::true"
+        echo "Response: $response"
+        if [[ $response == *'"msg":"请求成功"'* ]]; then
+          # 检查 "data" 中是否有 "dial tcp" 报错信息
+          if echo $response | grep -q '"dial tcp'; then
+            echo "Current IP is NOT pingable."
+            echo "pingable=false" >> $GITHUB_ENV
+          else
+            echo "Current IP is pingable."
+            echo "pingable=true" >> $GITHUB_ENV
+          fi
         else
-          echo "Current IP is NOT pingable."
-          echo "::set-output name=pingable::false"
+          echo "TCPing 请求失败，未收到成功消息。"
+          echo "pingable=false" >> $GITHUB_ENV
         fi
 
     - name: Restart EC2 Instance if Necessary
-      if: steps.check_ip.outputs.pingable == 'false'
+      if: env.pingable == 'false'
       run: |
-        MAX_RETRIES=5
-        for (( i=1; i<=MAX_RETRIES; i++ )); do
+        for (( i=1; i<=${{ env.MAX_RETRIES }}; i++ )); do
           echo "Attempt $i to restart EC2 instance..."
           aws ec2 stop-instances --instance-ids ${{ env.INSTANCE_ID }} --region ${{ env.REGION }}
           echo "Waiting for EC2 instance to stop..."
@@ -64,16 +69,25 @@ jobs:
           NEW_IP=$(aws ec2 describe-instances --instance-ids ${{ env.INSTANCE_ID }} --region ${{ env.REGION }} --query 'Reservations[0].Instances[0].PublicIpAddress' --output text)
           echo "New Public IP: $NEW_IP"
           
-          API_URL="https://v2.api-m.com/api/tcping?address=$NEW_IP&port=1081"
-          response=$(curl -sL $API_URL)
+          API_URL="https://api.jaxing.cc/v2/Tcping?host=${NEW_IP}&port=1081"
+          response=$(curl -s $API_URL)
           
-          if [[ $response == *"200"* ]]; then
-            echo "New IP is pingable."
-            echo "NEW_IP=$NEW_IP" >> $GITHUB_ENV
-            break
+          echo "Response: $response"
+          if [[ $response == *'"msg":"请求成功"'* ]]; then
+            if echo $response | grep -q '"dial tcp'; then
+              echo "New IP is NOT pingable."
+              if [ $i -eq ${{ env.MAX_RETRIES }} ]; then
+                echo "Max retries reached. Exiting."
+                exit 1
+              fi
+            else
+              echo "New IP is pingable."
+              echo "NEW_IP=$NEW_IP" >> $GITHUB_ENV
+              break
+            fi
           else
-            echo "New IP is NOT pingable."
-            if [ $i -eq $MAX_RETRIES ]; then
+            echo "TCPing 请求失败，未收到成功消息。"
+            if [ $i -eq ${{ env.MAX_RETRIES }} ]; then
               echo "Max retries reached. Exiting."
               exit 1
             fi
@@ -83,7 +97,7 @@ jobs:
         done
 
     - name: Get Cloudflare DNS Record ID
-      if: steps.restart_ec2.outputs.pingable == 'true'
+      if: env.pingable == 'true'
       run: |
         DNS_RECORDS=$(curl -s -X GET "https://api.cloudflare.com/client/v4/zones/${{ env.CF_ZONE_ID }}/dns_records?name=${{ env.DOMAIN }}" \
           -H "Authorization: Bearer ${{ env.CF_API_TOKEN }}" \
@@ -99,7 +113,7 @@ jobs:
         fi
 
     - name: Update DNS Record
-      if: steps.restart_ec2.outputs.pingable == 'true'
+      if: env.pingable == 'true'
       run: |
         NEW_IP=${{ env.NEW_IP }}
         echo "Updating DNS record with new IP..."
