@@ -1,19 +1,24 @@
-# config.yaml
-common:
-  project_id: "sturdy-yen-432600-k2"
-  sa_key: "${{ secrets.GCP_SA_KEY_025 }}"
-  cf_zone_id: "1fa9774064820f53fe1733e37a19f721"
-  port: 1081
-  proxied: "false"
-
 servers:
-  - name: "GCP 025 India"
-    vm_zone: "asia-south1-c"
-    vm_name: "instance-india"
-    region: "asia-south1"
-    domain: "gcp.india.onemorething.pp.ua"
-  - name: "GCP 025 Sydney"
-    vm_zone: "australia-southeast1-c"
-    vm_name: "instance-sydney"
-    region: "australia-southeast1"
-    domain: "gcp.sydney.onemorething.pp.ua"
+  - name: "Oregon Server"
+    project_id: "sturdy-yen-432600-k2"
+    sa_key: "${{ secrets.GCP_SA_KEY_025 }}"
+    vm_zone: "us-west1-b"
+    vm_name: "instance-oregon"
+    region: "us-west1"
+    domain: "gcp.oregon.onemorething.pp.ua"
+    cf_zone_id: "1fa9774064820f53fe1733e37a19f721"
+    port: 1081
+    proxied: false
+    cf_api_token: "${{ secrets.CF_API_TOKEN }}"
+
+  - name: "Another Server"
+    project_id: "sturdy-yen-432600-k2"
+    sa_key: ""${{ secrets.GCP_SA_KEY_025 }}"
+    vm_zone: "us-east1-b"
+    vm_name: "instance-another"
+    region: "us-east1"
+    domain: "gcp.another.onemorething.pp.ua"
+    cf_zone_id: "another-cf-zone-id"
+    port: 8080
+    proxied: false
+    cf_api_token: "${{ secrets.CF_API_TOKEN_ANOTHER }}"
