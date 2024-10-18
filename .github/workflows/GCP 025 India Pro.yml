@@ -77,7 +77,7 @@ jobs:
       id: reconfig_vm_and_test_ip
       run: |
         retry_count=0
-        max_retries=5
+        max_retries=8
         vm_name=${{ env.GCP_VM_NAME }}
         vm_zone=${{ env.GCP_VM_ZONE }}
         region=${{ env.GCP_REGION }}
