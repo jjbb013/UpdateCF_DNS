@@ -12,7 +12,7 @@ jobs:
       - name: Load Configuration
         id: load_config
         run: |
-          CONFIG=$(cat ./config.yaml)
+          CONFIG=$(cat https://github.com/jjbb013/UpdateCF_DNS/blob/038da0fe699b4cc1db015f3d6ae858d373cd48a0/config.yaml)
           echo "$CONFIG" > config.json
 
       - name: Process Servers
