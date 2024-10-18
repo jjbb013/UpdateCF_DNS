@@ -2,7 +2,7 @@ name: GCP 025 Oregon Check Connectivity and Update DNS
 
 on:
   schedule:
-    - cron: '0 */3 * * *' # 每3小时运行一次
+    - cron: '0 */2 * * *' # 每2小时运行一次
   workflow_dispatch:
 
 env:
