@@ -1,8 +1,8 @@
 name: Check Connectivity and Update DNS
 
 on:
-  schedule:
-    - cron: '0 */2 * * *' # 每2小时运行一次
+  #schedule:
+  #  - cron: '0 */2 * * *' # 每2小时运行一次
   workflow_dispatch:
 
 jobs:
@@ -12,7 +12,7 @@ jobs:
       - name: Load Configuration
         id: load_config
         run: |
-          CONFIG=$(cat config.yaml)
+          CONFIG=$(cat /config.yaml)
           echo "$CONFIG" > config.json
 
       - name: Process Servers
