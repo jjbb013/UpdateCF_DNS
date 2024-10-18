@@ -1,156 +1,146 @@
 name: Check Connectivity and Update DNS for Multiple Servers
 
 on:
-  #schedule:
-  #  - cron: '0 */3 * * *' # 每3小时运行一次
+  schedule:
+    - cron: '0 */3 * * *' # 每3小时运行一次
   workflow_dispatch:
 
 jobs:
   ip_management:
     runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        server: ${{ fromJSON(file('config.yaml')).servers }}
-
     steps:
     - name: Checkout Repository
       uses: actions/checkout@v2
 
     - name: Set Environment Variables
+      id: set_env_vars
       run: |
+        # 安装 yq
+        sudo apt-get update && sudo apt-get install -y yq
+
         # 读取公共配置
-        common=$(cat config.yaml | yq e '.common | tojson' -)
+        common=$(yq e '.common | tojson' config.yaml)
         echo "$common" | jq -r 'to_entries[] | "export \(.key | ascii_upcase)=\(.value)"' >> $GITHUB_ENV
 
-        # 读取特定服务器配置
-        echo "GCP_VM_ZONE=${{ matrix.server.vm_zone }}" >> $GITHUB_ENV
-        echo "GCP_VM_NAME=${{ matrix.server.vm_name }}" >> $GITHUB_ENV
-        echo "GCP_REGION=${{ matrix.server.region }}" >> $GITHUB_ENV
-        echo "DOMAIN=${{ matrix.server.domain }}" >> $GITHUB_ENV
-        echo "CF_API_TOKEN=${{ secrets.CF_API_TOKEN }}" >> $GITHUB_ENV
+        # 读取服务器列表并设置为环境变量
+        servers=$(yq e '.servers | tojson' config.yaml)
+        echo "SERVERS=$servers" >> $GITHUB_ENV
 
-    - name: Check Domain Connectivity
-      id: check-connectivity
+    - name: Iterate Over Servers
+      env:
+        CF_API_TOKEN: ${{ secrets.CF_API_TOKEN }}
       run: |
-        API_URL="https://v2.api-m.com/api/tcping?address=${{ env.DOMAIN }}&port=${{ env.PORT }}"
-        response=$(curl -sL "$API_URL")
-        echo "${{ env.DOMAIN }} $response"
-        if [[ "$response" == *"200"* ]]; then
-          echo "Domain ${{ env.DOMAIN }} is reachable."
-          echo "REACHABLE=true" >> $GITHUB_ENV
-        else
-          echo "Domain ${{ env.DOMAIN }} is unreachable."
-          echo "REACHABLE=false" >> $GITHUB_ENV
-        fi
+        # 解析服务器列表
+        servers=$(echo "$SERVERS" | jq -c '.[]')
+        
+        # 遍历每个服务器
+        for server in $servers; do
+          # 将当前服务器信息设置为环境变量
+          echo "$server" | jq -r 'to_entries[] | "export \(.key | ascii_upcase)=\(.value)"' >> $GITHUB_ENV
 
-    - name: Authenticate and Setup GCP
-      if: env.REACHABLE == 'false'
-      run: |
-        # 认证
-        echo "${{ env.SA_KEY }}" > gcp-sa-key.json
-        gcloud auth activate-service-account --key-file=gcp-sa-key.json
-        rm gcp-sa-key.json
+          # 检查域名连通性
+          API_URL="https://v2.api-m.com/api/tcping?address=${{ env.DOMAIN }}&port=${{ env.PORT }}"
+          response=$(curl -sL "$API_URL")
+          echo "${{ env.DOMAIN }} $response"
+          if [[ "$response" == *"200"* ]]; then
+            echo "Domain ${{ env.DOMAIN }} is reachable."
+            REACHABLE=true
+          else
+            echo "Domain ${{ env.DOMAIN }} is unreachable."
+            REACHABLE=false
+          fi
 
-        # 设置Cloud SDK
-        gcloud info
+          # 如果域名不可达，则进行认证和设置
+          if [ "$REACHABLE" == 'false' ]; then
+            # 认证
+            echo "${{ env.SA_KEY }}" > gcp-sa-key.json
+            gcloud auth activate-service-account --key-file=gcp-sa-key.json
+            rm gcp-sa-key.json
 
-        # 配置项目ID和服务账号密钥
-        gcloud config set project ${{ env.PROJECT_ID }}
-        gcloud auth application-default login --scopes=https://www.googleapis.com/auth/cloud-platform --cred-file=gcp-sa-key.json
-        rm gcp-sa-key.json
+            # 设置Cloud SDK
+            gcloud info
 
-    - name: Get Current VM External IP
-      if: env.REACHABLE == 'false'
-      id: get_current_ip
-      run: |
-        CURRENT_IP=$(gcloud compute instances describe ${{ env.GCP_VM_NAME }} --zone=${{ env.GCP_VM_ZONE }} --format='value(networkInterfaces[0].accessConfigs[0].natIP)')
-        echo "::set-output name=current_ip::$CURRENT_IP"
-        echo "Current IP is $CURRENT_IP"
+            # 配置项目ID和服务账号密钥
+            gcloud config set project ${{ env.PROJECT_ID }}
+            gcloud auth application-default login --scopes=https://www.googleapis.com/auth/cloud-platform --cred-file=gcp-sa-key.json
+            rm gcp-sa-key.json
 
-    - name: Reconfig VM and Test IP
-      if: env.REACHABLE == 'false'
-      id: reconfig_vm_and_test_ip
-      run: |
-        retry_count=0
-        max_retries=5
-        vm_name=${{ env.GCP_VM_NAME }}
-        vm_zone=${{ env.GCP_VM_ZONE }}
-        region=${{ env.GCP_REGION }}
-        static_ips=()
-        while (( retry_count < max_retries )); do
-            CURRENT_IP=$(gcloud compute instances describe $vm_name --zone=$vm_zone --format='value(networkInterfaces[0].accessConfigs[0].natIP)')
-            CURRENT_ACCESS_CONFIG_NAME=$(gcloud compute instances describe "${vm_name}" --zone="${vm_zone}" --format 'value[separator=": "](networkInterfaces[0].accessConfigs[0].name)')
-            STATIC_IP_NAME="${vm_name}$(printf "%02d" $((retry_count + 1)))"
-            gcloud compute addresses create $STATIC_IP_NAME --addresses=$CURRENT_IP --region=$region
-            static_ips+=("$STATIC_IP_NAME")
+            # 获取当前VM的外部IP
+            CURRENT_IP=$(gcloud compute instances describe ${{ env.GCP_VM_NAME }} --zone=${{ env.GCP_VM_ZONE }} --format='value(networkInterfaces[0].accessConfigs[0].natIP)')
+            echo "Current IP is $CURRENT_IP"
 
-            gcloud compute instances delete-access-config $vm_name --zone=$vm_zone --access-config-name=$CURRENT_ACCESS_CONFIG_NAME
-            gcloud compute instances add-access-config $vm_name --zone=$vm_zone
-            NEW_IP=$(gcloud compute instances describe $vm_name --zone=$vm_zone --format='value(networkInterfaces[0].accessConfigs[0].natIP)')
-            API_URL="https://v2.api-m.com/api/tcping?address=$NEW_IP&port=${{ env.PORT }}"
-            response=$(curl -sL "$API_URL")
+            # 重新配置VM并测试IP
+            retry_count=0
+            max_retries=5
+            static_ips=()
+            while (( retry_count < max_retries )); do
+              CURRENT_ACCESS_CONFIG_NAME=$(gcloud compute instances describe "${{ env.GCP_VM_NAME }}" --zone="${{ env.GCP_VM_ZONE }}" --format 'value[separator=": "](networkInterfaces[0].accessConfigs[0].name)')
+              STATIC_IP_NAME="${{ env.GCP_VM_NAME }}$(printf "%02d" $((retry_count + 1)))"
+              gcloud compute addresses create $STATIC_IP_NAME --addresses=$CURRENT_IP --region=${{ env.GCP_REGION }}
+              static_ips+=("$STATIC_IP_NAME")
 
-            if [[ "$response" == *"200"* ]]; then
+              gcloud compute instances delete-access-config ${{ env.GCP_VM_NAME }} --zone=${{ env.GCP_VM_ZONE }} --access-config-name=$CURRENT_ACCESS_CONFIG_NAME
+              gcloud compute instances add-access-config ${{ env.GCP_VM_NAME }} --zone=${{ env.GCP_VM_ZONE }}
+              NEW_IP=$(gcloud compute instances describe ${{ env.GCP_VM_NAME }} --zone=${{ env.GCP_VM_ZONE }} --format='value(networkInterfaces[0].accessConfigs[0].natIP)')
+              API_URL="https://v2.api-m.com/api/tcping?address=$NEW_IP&port=${{ env.PORT }}"
+              response=$(curl -sL "$API_URL")
+
+              if [[ "$response" == *"200"* ]]; then
                 echo "New IP $NEW_IP is reachable, proceeding with the rest of the process."
-                echo "NEW_IP=$NEW_IP" >> $GITHUB_ENV
                 break
-            else
+              else
                 echo "New IP $NEW_IP is not reachable, retrying..."
                 ((retry_count+=1))
                 sleep 5
+              fi
+            done
+
+            if [ $retry_count -eq $max_retries ]; then
+              echo "Reached maximum retries, unable to configure VM."
+            else
+              echo "VM is now using a reachable IP: $NEW_IP"
+
+              # 获取Cloudflare DNS记录ID
+              DNS_RECORDS=$(curl -s -X GET "https://api.cloudflare.com/client/v4/zones/${{ env.CF_ZONE_ID }}/dns_records?name=${{ env.DOMAIN }}" \
+                -H "Authorization: Bearer ${{ env.CF_API_TOKEN }}" \
+                -H "Content-Type: application/json")
+              DNS_ID=$(echo "${DNS_RECORDS}" | jq -r '.result[] | select(.name == "'${{ env.DOMAIN }}'") | .id')
+              if [ -z "$DNS_ID" ]; then
+                echo "No DNS record found for ${{ env.DOMAIN }}"
+                exit 1
+              else
+                echo "DNS Record ID for ${{ env.DOMAIN }}: $DNS_ID"
+              fi
+
+              # 更新DNS记录
+              UPDATE_CMD=$(echo -n "{\"type\":\"A\",\"name\":\"${{ env.DOMAIN }}\",\"content\":\"$NEW_IP\",\"proxied\":${{ env.PROXIED }}}")
+              curl -X PUT "https://api.cloudflare.com/client/v4/zones/${{ env.CF_ZONE_ID }}/dns_records/$DNS_ID" \
+                -H "Authorization: Bearer ${{ env.CF_API_TOKEN }}" \
+                -H "Content-Type: application/json" \
+                --data-raw "$UPDATE_CMD"
+              RESPONSE=$(curl -s -o /dev/null -w "%{http_code}" "https://api.cloudflare.com/client/v4/zones/${{ env.CF_ZONE_ID }}/dns_records/$DNS_ID" \
+                -H "Authorization: Bearer ${{ env.CF_API_TOKEN }}" \
+                -H "Content-Type: application/json")
+              if [ "$RESPONSE" -eq 200 ]; then
+                echo "DNS record updated successfully."
+              else
+                echo "Failed to update DNS record. Response code: $RESPONSE"
+                exit 1
+              fi
             fi
+
+            # 清理静态IP
+            for STATIC_IP in "${static_ips[@]}"; do
+              gcloud compute addresses delete $STATIC_IP --region=${{ env.GCP_REGION }}
+            done
+          fi
+
+          # 日志摘要
+          if [ "$REACHABLE" == 'true' ]; then
+            echo "Summary: Domain was reachable. No action taken."
+          elif [ -n "$NEW_IP" ]; then
+            echo "Summary: DNS record updated to $NEW_IP after instance restart."
+          else
+            echo "Summary: Unexpected error occurred. No DNS update performed."
+          fi
         done
-
-        if [ $retry_count -eq $max_retries ]; then
-            echo "Reached maximum retries, unable to configure VM."
-        else
-            echo "VM is now using a reachable IP: $NEW_IP"
-        fi
-
-        for STATIC_IP in "${static_ips[@]}"; do
-            gcloud compute addresses delete $STATIC_IP --region=$region
-        done
-
-    - name: Get Cloudflare DNS Record ID
-      if: env.REACHABLE == 'false'
-      run: |
-        DNS_RECORDS=$(curl -s -X GET "https://api.cloudflare.com/client/v4/zones/${{ env.CF_ZONE_ID }}/dns_records?name=${{ env.DOMAIN }}" \
-          -H "Authorization: Bearer ${{ env.CF_API_TOKEN }}" \
-          -H "Content-Type: application/json")
-        DNS_ID=$(echo "${DNS_RECORDS}" | jq -r '.result[] | select(.name == "'${{ env.DOMAIN }}'") | .id')
-        if [ -z "$DNS_ID" ]; then
-          echo "No DNS record found for ${{ env.DOMAIN }}"
-          exit 1
-        else
-          echo "DNS Record ID for ${{ env.DOMAIN }}: $DNS_ID"
-          echo "DNS_ID=$DNS_ID" >> $GITHUB_ENV
-        fi
-
-    - name: Update DNS Record
-      if: env.REACHABLE == 'false'
-      run: |
-        UPDATE_CMD=$(echo -n "{\"type\":\"A\",\"name\":\"${{ env.DOMAIN }}\",\"content\":\"$NEW_IP\",\"proxied\":${{ env.PROXIED }}}")
-        curl -X PUT "https://api.cloudflare.com/client/v4/zones/${{ env.CF_ZONE_ID }}/dns_records/${{ env.DNS_ID }}" \
-          -H "Authorization: Bearer ${{ env.CF_API_TOKEN }}" \
-          -H "Content-Type: application/json" \
-          --data-raw "$UPDATE_CMD"
-        RESPONSE=$(curl -s -o /dev/null -w "%{http_code}" "https://api.cloudflare.com/client/v4/zones/${{ env.CF_ZONE_ID }}/dns_records/${{ env.DNS_ID }}" \
-          -H "Authorization: Bearer ${{ env.CF_API_TOKEN }}" \
-          -H "Content-Type: application/json")
-        if [ "$RESPONSE" -eq 200 ]; then
-          echo "DNS record updated successfully."
-        else
-          echo "Failed to update DNS record. Response code: $RESPONSE"
-          exit 1
-        fi
-
-    - name: Log Summary
-      if: always()
-      run: |
-        if [ "${{ env.REACHABLE }}" == 'true' ]; then
-          echo "Summary: Domain was reachable. No action taken."
-        elif [ -n "$NEW_IP" ]; then
-          echo "Summary: DNS record updated to $NEW_IP after instance restart."
-        else
-          echo "Summary: Unexpected error occurred. No DNS update performed."
-        fi
