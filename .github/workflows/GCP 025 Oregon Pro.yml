@@ -25,7 +25,7 @@ jobs:
       id: check-connectivity
       run: |
         # 使用curl获取ping结果
-        API_URL="https://v2.api-m.com/api/tcping?address=${{env.DOMAIN}}&port=${{env.PORT}}"
+        API_URL="https://api.jaxing.cc/v2/Tcping?host=${{env.DOMAIN}}&port=${{env.PORT}}"
         response=$(curl -sL $API_URL)
         echo "Response for domain ${{ env.DOMAIN }}: $response"
         
@@ -99,7 +99,7 @@ jobs:
             # Step 3: Get new IP and test
             gcloud compute instances add-access-config $vm_name --zone=$vm_zone
             NEW_IP=$(gcloud compute instances describe $vm_name --zone=$vm_zone --format='value(networkInterfaces[0].accessConfigs[0].natIP)')
-            API_URL="https://v2.api-m.com/api/tcping?address=$NEW_IP&port=${{ env.PORT }}"
+            API_URL="https://api.jaxing.cc/v2/Tcping?host=$NEW_IP&port=${{ env.PORT }}"
             response=$(curl -sL "$API_URL")
         
             echo "Response for new IP $NEW_IP: $response"
