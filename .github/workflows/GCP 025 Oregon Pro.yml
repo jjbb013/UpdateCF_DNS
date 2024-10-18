@@ -1,4 +1,4 @@
-name: GCP 025 Oregon Check Connectivity and Update DNS
+name: GCP 025 Oregon Pro
 
 on:
   schedule:
@@ -27,15 +27,17 @@ jobs:
         # 使用curl获取ping结果
         API_URL="https://v2.api-m.com/api/tcping?address=${{env.DOMAIN}}&port=${{env.PORT}}"
         response=$(curl -sL $API_URL)
-        echo ${{ env.DOMAIN }} $response
-        if [[ "$response" == *"200"* ]]; then
-          echo "Domain $Domain is reachable."
+        echo "Response for domain ${{ env.DOMAIN }}: $response"
+        
+        # 检查响应结构以确认域名是否可达
+        if [[ $response == *'"msg":"请求成功"'* ]] && ! echo "$response" | grep -q '"dial tcp'; then
+          echo "Domain ${{ env.DOMAIN }} is reachable."
           echo "REACHABLE=true" >> $GITHUB_ENV
         else
-          echo "Domain $Domain is unreachable."
+          echo "Domain ${{ env.DOMAIN }} is unreachable."
           echo "REACHABLE=false" >> $GITHUB_ENV
         fi
-        
+
     - name: Checkout Repository
       if: env.REACHABLE == 'false'
       uses: actions/checkout@v2
@@ -68,10 +70,9 @@ jobs:
       id: get_current_ip
       run: |
         CURRENT_IP=$(gcloud compute instances describe ${{ env.GCP_VM_NAME }} --zone=${{ env.GCP_VM_ZONE }} --format='value(networkInterfaces[0].accessConfigs[0].natIP)')
-        echo "::set-output name=current_ip::$CURRENT_IP"
         echo "Current IP is $CURRENT_IP"
+        echo "CURRENT_IP=$CURRENT_IP" >> $GITHUB_ENV
 
-        
     - name: Reconfig VM and Test IP
       if: env.REACHABLE == 'false'
       id: reconfig_vm_and_test_ip
@@ -86,7 +87,7 @@ jobs:
         while (( retry_count < max_retries )); do
             # Step 1: Promote to static and name it
             CURRENT_IP=$(gcloud compute instances describe $vm_name --zone=$vm_zone --format='value(networkInterfaces[0].accessConfigs[0].natIP)')
-            CURRENT_ACCESS_CONFIG_NAME=$(gcloud compute instances describe "${GCP_VM_NAME}" --zone="${GCP_VM_ZONE}" --format 'value[separator=": "](networkInterfaces[0].accessConfigs[0].name)')
+            CURRENT_ACCESS_CONFIG_NAME=$(gcloud compute instances describe "$vm_name" --zone="$vm_zone" --format='value(networkInterfaces[0].accessConfigs[0].name)')
             STATIC_IP_NAME="${vm_name}$(printf "%02d" $((retry_count + 1)))"
             gcloud compute addresses create $STATIC_IP_NAME --addresses=$CURRENT_IP --region=$region
             # 将当前静态IP添加到数组中
@@ -98,10 +99,11 @@ jobs:
             # Step 3: Get new IP and test
             gcloud compute instances add-access-config $vm_name --zone=$vm_zone
             NEW_IP=$(gcloud compute instances describe $vm_name --zone=$vm_zone --format='value(networkInterfaces[0].accessConfigs[0].natIP)')
-            API_URL="https://v2.api-m.com/api/tcping?address=$NEW_IP&port=1081"
+            API_URL="https://v2.api-m.com/api/tcping?address=$NEW_IP&port=${{ env.PORT }}"
             response=$(curl -sL "$API_URL")
         
-            if [[ "$response" == *"200"* ]]; then
+            echo "Response for new IP $NEW_IP: $response"
+            if [[ $response == *'"msg":"请求成功"'* ]] && ! echo "$response" | grep -q '"dial tcp'; then
                 echo "New IP $NEW_IP is reachable, proceeding with the rest of the process."
                 echo "NEW_IP=$NEW_IP" >> $GITHUB_ENV
                 break
@@ -115,7 +117,6 @@ jobs:
         if [ $retry_count -eq $max_retries ]; then
             echo "Reached maximum retries, unable to configure VM."
         else
-            # Step 5: Record and output the current IP
             echo "VM is now using a reachable IP: $NEW_IP"
         fi
         
@@ -123,6 +124,7 @@ jobs:
         for STATIC_IP in "${static_ips[@]}"; do
             gcloud compute addresses delete $STATIC_IP --region=$region
         done
+    
     - name: Get Cloudflare DNS Record ID
       if: env.REACHABLE == 'false'
       run: |
@@ -138,6 +140,7 @@ jobs:
           echo "DNS Record ID for ${{ env.DOMAIN }}: $DNS_ID"
           echo "DNS_ID=$DNS_ID" >> $GITHUB_ENV
         fi
+
     - name: Update DNS Record
       if: env.REACHABLE == 'false'
       run: |
@@ -147,23 +150,26 @@ jobs:
           -H "Authorization: Bearer ${{ env.CF_API_TOKEN }}" \
           -H "Content-Type: application/json" \
           --data-raw "$UPDATE_CMD"
+        
         # 检查响应状态
         RESPONSE=$(curl -s -o /dev/null -w "%{http_code}" "https://api.cloudflare.com/client/v4/zones/${{ env.CF_ZONE_ID }}/dns_records/${{ env.DNS_ID }}" \
           -H "Authorization: Bearer ${{ env.CF_API_TOKEN }}" \
           -H "Content-Type: application/json")
+        
         if [ "$RESPONSE" -eq 200 ]; then
           echo "DNS record updated successfully."
         else
           echo "Failed to update DNS record. Response code: $RESPONSE"
           exit 1
         fi
+
     - name: Log Summary
       if: always()
       run: |
         if [ "${{ env.REACHABLE }}" == 'true' ]; then
           echo "Summary: Domain was reachable. No action taken."
         elif [ -n "$NEW_IP" ]; then
-          echo "Summary: DNS record updated to $NEW_IP after instance restart."
+          echo "Summary: DNS record updated to $NEW_IP after instance reconfiguration."
         else
           echo "Summary: Unexpected error occurred. No DNS update performed."
         fi
