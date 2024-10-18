@@ -59,7 +59,9 @@ jobs:
           aws ec2 associate-address --instance-id ${{ env.INSTANCE_ID }} --public-ip $NEW_ALLOCATED_IP --region ${{ env.REGION }}
 
           # Check if the new IP is reachable
+          sleep 5
           API_URL="https://v2.api-m.com/api/tcping?address=${{ env.NEW_ALLOCATED_IP }}&port=1081"
+          echo $API_URL
           response=$(curl -sL $API_URL)
           echo ${{ env.NEW_ALLOCATED_IP }} $response
 
