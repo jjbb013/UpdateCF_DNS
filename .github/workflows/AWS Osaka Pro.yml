@@ -1,7 +1,7 @@
-name: AWS Osaka Pro
+name: AWS Osaka Healthcheck and EC2 Management
 on:
   schedule:
-    - cron: '0 */2 * * *' # 每2小时执行一次
+    - cron: '0 */3 * * *' # 每3小时执行一次
   workflow_dispatch:
 
 env:
@@ -23,7 +23,7 @@ jobs:
         aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID_Osaka }}
         aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY_Osaka }}
         aws-region: ${{ env.REGION }}
-        
+
     - name: Check Current IP and Connectivity
       id: check_ip
       run: |
@@ -33,61 +33,58 @@ jobs:
 
         API_URL="https://v2.api-m.com/api/tcping?address=${{ env.CURRENT_IP }}&port=1081"
         response=$(curl -sL $API_URL)
-        echo "$CURRENT_IP $response"
         
         if [[ $response == *"200"* ]]; then
-          echo "Current IP is pingable at $(date)"
+          echo "Current IP is pingable."
           echo "::set-output name=pingable::true"
         else
-          echo "Current IP is NOT pingable at $(date)"
+          echo "Current IP is NOT pingable."
           echo "::set-output name=pingable::false"
         fi
 
-    - name: Restart EC2 Instance
+    - name: Restart EC2 Instance if Necessary
       if: steps.check_ip.outputs.pingable == 'false'
       run: |
-        echo "Restarting EC2 instance..."
-        aws ec2 reboot-instances --instance-ids ${{ env.INSTANCE_ID }} --region ${{ env.REGION }}
-        echo "Waiting for instance to reboot..."
-        aws ec2 wait instance-status-ok --instance-ids ${{ env.INSTANCE_ID }} --region ${{ env.REGION }}
-      
-    - name: Retry Connectivity Check
-      id: retry_connectivity
-      run: |
-        for (( i=1; i<=${{ env.MAX_RETRIES }}; i++ )); do
-          CURRENT_IP=$(aws ec2 describe-instances --instance-ids ${{ env.INSTANCE_ID }} --region ${{ env.REGION }} --query 'Reservations[0].Instances[0].PublicIpAddress' --output text)
-          echo "Retry $i: Checking new IP $CURRENT_IP..."
+        MAX_RETRIES=5
+        for (( i=1; i<=MAX_RETRIES; i++ )); do
+          echo "Attempt $i to restart EC2 instance..."
+          aws ec2 stop-instances --instance-ids ${{ env.INSTANCE_ID }} --region ${{ env.REGION }}
+          echo "Waiting for EC2 instance to stop..."
+          aws ec2 wait instance-stopped --instance-ids ${{ env.INSTANCE_ID }} --region ${{ env.REGION }}
           
-          API_URL="https://v2.api-m.com/api/tcping?address=${{ env.CURRENT_IP }}&port=1081"
-          response=$(curl -sL $API_URL)
-          echo "$CURRENT_IP $response"
+          echo "Waiting 10 seconds before starting the instance again..."
+          sleep 10
+          
+          echo "Starting EC2 instance..."
+          aws ec2 start-instances --instance-ids ${{ env.INSTANCE_ID }} --region ${{ env.REGION }}
+          echo "Waiting for EC2 instance to start..."
+          aws ec2 wait instance-running --instance-ids ${{ env.INSTANCE_ID }} --region ${{ env.REGION }}
 
+          # 获取新的IP并检查可达性
+          NEW_IP=$(aws ec2 describe-instances --instance-ids ${{ env.INSTANCE_ID }} --region ${{ env.REGION }} --query 'Reservations[0].Instances[0].PublicIpAddress' --output text)
+          echo "New Public IP: $NEW_IP"
+          
+          API_URL="https://v2.api-m.com/api/tcping?address=$NEW_IP&port=1081"
+          response=$(curl -sL $API_URL)
+          
           if [[ $response == *"200"* ]]; then
-            echo "New IP is pingable at $(date)"
-            echo "NEW_IP=$CURRENT_IP" >> $GITHUB_ENV
-            echo "::set-output name=pingable::true"
+            echo "New IP is pingable."
+            echo "NEW_IP=$NEW_IP" >> $GITHUB_ENV
             break
           else
-            echo "New IP is NOT pingable at attempt $i."
-            if [ $i -lt ${{ env.MAX_RETRIES }} ]; then
-              echo "Restarting EC2 instance again..."
-              aws ec2 reboot-instances --instance-ids ${{ env.INSTANCE_ID }} --region ${{ env.REGION }}
-              aws ec2 wait instance-status-ok --instance-ids ${{ env.INSTANCE_ID }} --region ${{ env.REGION }}
+            echo "New IP is NOT pingable."
+            if [ $i -eq $MAX_RETRIES ]; then
+              echo "Max retries reached. Exiting."
+              exit 1
             fi
           fi
 
           sleep 5 # 等待一段时间再重试
         done
 
-        if [[ $response != *"200"* ]]; then
-          echo "All attempts failed. No valid IP found."
-          exit 1
-        fi
-
     - name: Get Cloudflare DNS Record ID
-      if: steps.retry_connectivity.outputs.pingable == 'true'
+      if: steps.restart_ec2.outputs.pingable == 'true'
       run: |
-        # 使用cURL调用Cloudflare API获取DNS记录ID
         DNS_RECORDS=$(curl -s -X GET "https://api.cloudflare.com/client/v4/zones/${{ env.CF_ZONE_ID }}/dns_records?name=${{ env.DOMAIN }}" \
           -H "Authorization: Bearer ${{ env.CF_API_TOKEN }}" \
           -H "Content-Type: application/json")
@@ -102,7 +99,7 @@ jobs:
         fi
 
     - name: Update DNS Record
-      if: steps.retry_connectivity.outputs.pingable == 'true'
+      if: steps.restart_ec2.outputs.pingable == 'true'
       run: |
         NEW_IP=${{ env.NEW_IP }}
         echo "Updating DNS record with new IP..."
