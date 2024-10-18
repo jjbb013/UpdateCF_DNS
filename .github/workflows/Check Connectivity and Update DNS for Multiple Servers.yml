@@ -12,7 +12,7 @@ jobs:
       - name: Load Configuration
         id: load_config
         run: |
-          CONFIG=$(cat /config.yaml)
+          CONFIG=$(cat ./config.yaml)
           echo "$CONFIG" > config.json
 
       - name: Process Servers
