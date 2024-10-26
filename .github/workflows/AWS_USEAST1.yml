@@ -5,7 +5,7 @@ on:
   workflow_dispatch:
 
 env:
-  INSTANCE_ID: i-03e33dd7ccb94150e
+  INSTANCE_ID: i-0f52819479f2d85f0
   REGION: us-east-1
   DOMAIN: 'aws.useast1.onemorething.pp.ua' # 需要查询的DNS名称
   CF_ZONE_ID: 1fa9774064820f53fe1733e37a19f721
