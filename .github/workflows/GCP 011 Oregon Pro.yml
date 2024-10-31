@@ -1,14 +1,14 @@
-name: GCP 025 Oregon Pro
+name: GCP 011 Oregon Pro
 
 on:
-  #schedule:
-  #  - cron: '0 */2 * * *' # 每2小时运行一次
+  schedule:
+    - cron: '0 */2 * * *' # 每2小时运行一次
   workflow_dispatch:
 
 env:
-  GCP_PROJECT_ID: sturdy-yen-432600-k2
+  GCP_PROJECT_ID: skillful-cider-440305-d7
   GCP_SA_KEY: ${{ secrets.GCP_SA_KEY_025 }}
-  GCP_VM_ZONE: 'us-west1-b'
+  GCP_VM_ZONE: 'us-west1-c'
   GCP_VM_NAME: 'instance-oregon'
   GCP_REGION: 'us-west1'
   DOMAIN: 'gcp.oregon.onemorething.pp.ua'
