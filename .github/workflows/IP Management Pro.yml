@@ -14,10 +14,12 @@ env:
   CF_API_TOKEN: ${{ secrets.CF_API_TOKEN }}
 
 jobs:
-  read_config:
+  ip_management:
     runs-on: ubuntu-latest
-    outputs:
-      server_list: ${{ steps.set-server-list.outputs.server_list }}
+    strategy:
+      matrix:
+        server: ${{ fromJson(steps.set-server-list.outputs.server_list) }}
+
     steps:
     - name: Checkout Repository
       uses: actions/checkout@v2
@@ -39,25 +41,14 @@ jobs:
         fi
         echo "server_list=$server_list" >> $GITHUB_OUTPUT
 
-  ip_management:
-    needs: read_config
-    runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        server: ${{ fromJson(needs.read_config.outputs.server_list) }}
-
-    steps:
-    - name: Checkout Repository
-      uses: actions/checkout@v2
-
     - name: Debug Output
       run: |
-        echo "Server list from read_config: ${{ needs.read_config.outputs.server_list }}"
-        if [ -z "${{ needs.read_config.outputs.server_list }}" ]; then
+        echo "Server list from set-server-list: ${{ steps.set-server-list.outputs.server_list }}"
+        if [ -z "${{ steps.set-server-list.outputs.server_list }}" ]; then
           echo "Error: Server list is empty or invalid."
           exit 1
         fi
-        parsed_server_list=$(echo "${{ needs.read_config.outputs.server_list }}" | jq .)
+        parsed_server_list=$(echo "${{ steps.set-server-list.outputs.server_list }}" | jq .)
         echo "Parsed server list: $parsed_server_list"
         if [ -z "$parsed_server_list" ]; then
           echo "Error: Parsed server list is empty or invalid."
