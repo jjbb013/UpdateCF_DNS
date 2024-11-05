@@ -27,6 +27,10 @@ jobs:
       run: |
         server_list=$(yq e '.servers' servers.yaml | yq e -o=j -I=0 '.')
         echo "Server list: $server_list"  # 添加日志记录
+        if [ -z "$server_list" ]; then
+          echo "Error: Server list is empty or invalid."
+          exit 1
+        fi
         echo "server_list=$server_list" >> $GITHUB_OUTPUT
 
   ip_management:
@@ -43,6 +47,10 @@ jobs:
     - name: Debug Output
       run: |
         echo "Server list from read_config: ${{ needs.read_config.outputs.server_list }}"
+        if [ -z "${{ needs.read_config.outputs.server_list }}" ]; then
+          echo "Error: Server list is empty or invalid."
+          exit 1
+        fi
         echo "Parsed server list: ${{ fromJson(needs.read_config.outputs.server_list) }}"
 
     - name: Load Server Config
