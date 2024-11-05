@@ -57,7 +57,12 @@ jobs:
           echo "Error: Server list is empty or invalid."
           exit 1
         fi
-        echo "Parsed server list: ${{ fromJson(needs.read_config.outputs.server_list) }}"
+        parsed_server_list=$(echo "${{ needs.read_config.outputs.server_list }}" | jq .)
+        echo "Parsed server list: $parsed_server_list"
+        if [ -z "$parsed_server_list" ]; then
+          echo "Error: Parsed server list is empty or invalid."
+          exit 1
+        fi
 
     - name: Load Server Config
       id: load-server-config
