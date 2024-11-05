@@ -34,12 +34,29 @@ jobs:
         echo "GCP_REGION_0: $GCP_REGION_0"
         # Repeat for other servers if needed
 
+
   ip_management:
     needs: setup
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        server_index: [0, 1, 2]
+        server: [0, 1, 2]  # 假设你有三台服务器
+
+    steps:
+    - name: Checkout Repository
+      uses: actions/checkout@v2
+
+    - name: Use server information from matrix
+      env:
+        DOMAIN: ${{ secrets.DOMAIN_${{ matrix.server }} }}
+        GCP_VM_NAME: ${{ secrets.GCP_VM_NAME_${{ matrix.server }} }}
+        GCP_VM_ZONE: ${{ secrets.GCP_VM_ZONE_${{ matrix.server }} }}
+        GCP_REGION: ${{ secrets.GCP_REGION_${{ matrix.server }} }}
+      run: |
+        echo "DOMAIN: $DOMAIN"
+        echo "GCP_VM_NAME: $GCP_VM_NAME"
+        echo "GCP_VM_ZONE: $GCP_VM_ZONE"
+        echo "GCP_REGION: $GCP_REGION"
 
     steps:
     - name: Checkout Repository
