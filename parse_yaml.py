@@ -19,13 +19,12 @@ def main():
             gcp_vm_zone = server.get('gcp_vm_zone')
             gcp_region = server.get('gcp_region')
 
-            # 设置环境变量
-            os.environ[f'DOMAIN_{index}'] = domain
-            os.environ[f'GCP_VM_NAME_{index}'] = gcp_vm_name
-            os.environ[f'GCP_VM_ZONE_{index}'] = gcp_vm_zone
-            os.environ[f'GCP_REGION_{index}'] = gcp_region
-
-        print("Environment variables set successfully.")
+            # 打印服务器信息以进行验证
+            print(f"Server {index}:")
+            print(f"  Domain: {domain}")
+            print(f"  GCP VM Name: {gcp_vm_name}")
+            print(f"  GCP VM Zone: {gcp_vm_zone}")
+            print(f"  GCP Region: {gcp_region}")
 
     except Exception as e:
         print(f"Error: {e}")
