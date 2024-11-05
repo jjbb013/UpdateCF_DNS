@@ -25,8 +25,7 @@ jobs:
     - name: Read and Parse Server Config
       id: set-server-list
       run: |
-        server_list=$(yq e '.servers' servers.yaml -o=json)
-        echo "Server list: $server_list"  # 添加日志记录
+        server_list=$(yq e '.servers' servers.yaml)
         if [ -z "$server_list" ]; then
           echo "Error: Server list is empty or invalid."
           exit 1
@@ -36,7 +35,17 @@ jobs:
           echo "Error: Server list is not valid JSON."
           exit 1
         fi
-        echo "server_list=$server_list" >> $GITHUB_ENV
+        # 解析服务器列表并设置环境变量
+        echo "$server_list" | jq -c '.[]' | while read server; do
+          domain=$(echo "$server" | jq -r '.domain')
+          gcp_vm_name=$(echo "$server" | jq -r '.gcp_vm_name')
+          gcp_vm_zone=$(echo "$server" | jq -r '.gcp_vm_zone')
+          gcp_region=$(echo "$server" | jq -r '.gcp_region')
+          echo "DOMAIN=$domain" >> $GITHUB_ENV
+          echo "GCP_VM_NAME=$gcp_vm_name" >> $GITHUB_ENV
+          echo "GCP_VM_ZONE=$gcp_vm_zone" >> $GITHUB_ENV
+          echo "GCP_REGION=$gcp_region" >> $GITHUB_ENV
+        done
 
   ip_management:
     needs: read_config
