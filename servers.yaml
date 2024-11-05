@@ -1,4 +1,3 @@
-# servers.yaml
 servers:
   - domain: gcp.tw2.onemorething.pp.ua
     gcp_vm_name: instance-tw2
