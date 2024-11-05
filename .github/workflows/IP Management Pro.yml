@@ -31,6 +31,12 @@ jobs:
           echo "Error: Server list is empty or invalid."
           exit 1
         fi
+        # 验证 JSON 格式
+        echo "$server_list" | jq . > /dev/null
+        if [ $? -ne 0 ]; then
+          echo "Error: Server list is not valid JSON."
+          exit 1
+        fi
         echo "server_list=$server_list" >> $GITHUB_OUTPUT
 
   ip_management:
