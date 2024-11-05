@@ -1,8 +1,8 @@
 name: IP Management Pro
 
 on:
-  #schedule:
-  #  - cron: '0 */3 * * *' # 每3小时运行一次
+  schedule:
+    - cron: '0 */3 * * *' # 每3小时运行一次
   workflow_dispatch:
 
 env:
@@ -14,76 +14,49 @@ env:
   CF_API_TOKEN: ${{ secrets.CF_API_TOKEN }}
 
 jobs:
-  read_config:
+  setup:
     runs-on: ubuntu-latest
-    outputs:
-      server_list: ${{ steps.set-server-list.outputs.server_list }}
+
     steps:
     - name: Checkout Repository
       uses: actions/checkout@v2
-    - name: Install yq
-      run: sudo wget https://github.com/mikefarah/yq/releases/download/v4.6.1/yq_linux_amd64 -O /usr/bin/yq && sudo chmod +x /usr/bin/yq
-    
-    - name: Install jq
-      run: sudo apt-get install -y jq
 
-    - name: Read and Parse Server Config
-      id: set-server-list
+    - name: Set up Python
+      uses: actions/setup-python@v2
+      with:
+        python-version: '3.x'
+
+    - name: Install PyYAML
+      run: pip install pyyaml
+
+    - name: Parse YAML and set environment variables
+      run: python parse_yaml.py
+
+    - name: Print Environment Variables
       run: |
-        server_list=$(yq e '.servers' servers.yaml -P)
-        if [ -z "$server_list" ]; then
-          echo "Error: Server list is empty or invalid."
-          exit 1
-        fi
-        # 验证 JSON 格式
-        if ! echo "$server_list" | jq . > /dev/null; then
-          echo "Error: Server list is not valid JSON."
-          exit 1
-        fi
-        # 解析服务器列表并设置环境变量
-        echo "$server_list" | jq -c '.[]' | while read server; do
-          domain=$(echo "$server" | jq -r '.domain')
-          gcp_vm_name=$(echo "$server" | jq -r '.gcp_vm_name')
-          gcp_vm_zone=$(echo "$server" | jq -r '.gcp_vm_zone')
-          gcp_region=$(echo "$server" | jq -r '.gcp_region')
-          echo "DOMAIN=$domain" >> $GITHUB_ENV
-          echo "GCP_VM_NAME=$gcp_vm_name" >> $GITHUB_ENV
-          echo "GCP_VM_ZONE=$gcp_vm_zone" >> $GITHUB_ENV
-          echo "GCP_REGION=$gcp_region" >> $GITHUB_ENV
-        done
+        echo "DOMAIN: $DOMAIN"
+        echo "GCP_VM_NAME: $GCP_VM_NAME"
+        echo "GCP_VM_ZONE: $GCP_VM_ZONE"
+        echo "GCP_REGION: $GCP_REGION"
 
   ip_management:
-    needs: read_config
+    needs: setup
     runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        server: ${{ fromJson(needs.read_config.outputs.server_list) }}
 
     steps:
     - name: Checkout Repository
       uses: actions/checkout@v2
 
-    - name: Debug Output
-      run: |
-        echo "Server list from read_config: ${{ needs.read_config.outputs.server_list }}"
-        if [ -z "${{ needs.read_config.outputs.server_list }}" ]; then
-          echo "Error: Server list is empty or invalid."
-          exit 1
-        fi
-        parsed_server_list=$(echo "${{ needs.read_config.outputs.server_list }}" | jq .)
-        echo "Parsed server list: $parsed_server_list"
-        if [ -z "$parsed_server_list" ]; then
-          echo "Error: Parsed server list is empty or invalid."
-          exit 1
-        fi
+    - name: Authentication
+      uses: google-github-actions/auth@v2
+      with:
+        credentials_json: '${{ env.GCP_SA_KEY }}'
 
-    - name: Load Server Config
-      id: load-server-config
-      run: |
-        echo "DOMAIN=${{ matrix.server.domain }}" >> $GITHUB_ENV
-        echo "GCP_VM_NAME=${{ matrix.server.gcp_vm_name }}" >> $GITHUB_ENV
-        echo "GCP_VM_ZONE=${{ matrix.server.gcp_vm_zone }}" >> $GITHUB_ENV
-        echo "GCP_REGION=${{ matrix.server.gcp_region }}" >> $GITHUB_ENV
+    - name: Set up Cloud SDK
+      uses: google-github-actions/setup-gcloud@v2
+
+    - name: Use gcloud CLI
+      run: gcloud info
 
     - name: Check Domain Connectivity
       id: check-connectivity
@@ -98,21 +71,6 @@ jobs:
           echo "Domain ${{ env.DOMAIN }} is unreachable."
           echo "REACHABLE=false" >> $GITHUB_ENV
         fi
-
-    - name: Authentication
-      id: auth
-      if: env.REACHABLE == 'false'
-      uses: google-github-actions/auth@v2
-      with:
-        credentials_json: '${{ env.GCP_SA_KEY }}'
-
-    - name: Set up Cloud SDK
-      if: env.REACHABLE == 'false'
-      uses: google-github-actions/setup-gcloud@v2
-
-    - name: Use gcloud CLI
-      if: env.REACHABLE == 'false'
-      run: gcloud info
 
     - name: Get Current VM External IP
       if: env.REACHABLE == 'false'
