@@ -21,11 +21,16 @@ jobs:
     steps:
     - name: Checkout Repository
       uses: actions/checkout@v2
+    - name: Install yq
+      run: sudo wget https://github.com/mikefarah/yq/releases/download/v4.6.1/yq_linux_amd64 -O /usr/bin/yq && sudo chmod +x /usr/bin/yq
+    
+    - name: Install jq
+      run: sudo apt-get install -y jq
 
     - name: Read and Parse Server Config
       id: set-server-list
       run: |
-        server_list=$(yq e '.servers' servers.yaml)
+        server_list=$(yq e '.servers' servers.yaml -P)
         if [ -z "$server_list" ]; then
           echo "Error: Server list is empty or invalid."
           exit 1
