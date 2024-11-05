@@ -1,8 +1,8 @@
 name: IP Management Pro
 
 on:
-  schedule:
-    - cron: '0 */3 * * *' # 每3小时运行一次
+  #schedule:
+  #  - cron: '0 */3 * * *' # 每3小时运行一次
   workflow_dispatch:
 
 env:
@@ -34,14 +34,18 @@ jobs:
 
     - name: Print Environment Variables
       run: |
-        echo "DOMAIN: $DOMAIN"
-        echo "GCP_VM_NAME: $GCP_VM_NAME"
-        echo "GCP_VM_ZONE: $GCP_VM_ZONE"
-        echo "GCP_REGION: $GCP_REGION"
+        echo "DOMAIN_0: $DOMAIN_0"
+        echo "GCP_VM_NAME_0: $GCP_VM_NAME_0"
+        echo "GCP_VM_ZONE_0: $GCP_VM_ZONE_0"
+        echo "GCP_REGION_0: $GCP_REGION_0"
+        # Repeat for other servers if needed
 
   ip_management:
     needs: setup
     runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        server_index: [0, 1, 2]
 
     steps:
     - name: Checkout Repository
@@ -50,7 +54,7 @@ jobs:
     - name: Authentication
       uses: google-github-actions/auth@v2
       with:
-        credentials_json: '${{ env.GCP_SA_KEY }}'
+        credentials_json: '${{ secrets.GCP_SA_KEY }}'
 
     - name: Set up Cloud SDK
       uses: google-github-actions/setup-gcloud@v2
@@ -61,14 +65,14 @@ jobs:
     - name: Check Domain Connectivity
       id: check-connectivity
       run: |
-        API_URL="https://api.jaxing.cc/v2/Tcping?host=${{ env.DOMAIN }}&port=${{ env.PORT }}"
+        API_URL="https://api.jaxing.cc/v2/Tcping?host=${{ env[format('DOMAIN_{0}', matrix.server_index)] }}&port=${{ env.PORT }}"
         response=$(curl -sL $API_URL)
-        echo "Response for domain ${{ env.DOMAIN }}: $response"
+        echo "Response for domain ${{ env[format('DOMAIN_{0}', matrix.server_index)] }}: $response"
         if [[ $response == *'"msg":"请求成功"'* ]] && ! echo "$response" | grep -q '"dial tcp'; then
-          echo "Domain ${{ env.DOMAIN }} is reachable."
+          echo "Domain ${{ env[format('DOMAIN_{0}', matrix.server_index)] }} is reachable."
           echo "REACHABLE=true" >> $GITHUB_ENV
         else
-          echo "Domain ${{ env.DOMAIN }} is unreachable."
+          echo "Domain ${{ env[format('DOMAIN_{0}', matrix.server_index)] }} is unreachable."
           echo "REACHABLE=false" >> $GITHUB_ENV
         fi
 
@@ -76,7 +80,7 @@ jobs:
       if: env.REACHABLE == 'false'
       id: get_current_ip
       run: |
-        CURRENT_IP=$(gcloud compute instances describe ${{ env.GCP_VM_NAME }} --zone=${{ env.GCP_VM_ZONE }} --format='value(networkInterfaces[0].accessConfigs[0].natIP)')
+        CURRENT_IP=$(gcloud compute instances describe ${{ env[format('GCP_VM_NAME_{0}', matrix.server_index)] }} --zone=${{ env[format('GCP_VM_ZONE_{0}', matrix.server_index)] }} --format='value(networkInterfaces[0].accessConfigs[0].natIP)')
         echo "Current IP is $CURRENT_IP"
         echo "CURRENT_IP=$CURRENT_IP" >> $GITHUB_ENV
 
@@ -86,9 +90,9 @@ jobs:
       run: |
         retry_count=0
         max_retries=5
-        vm_name=${{ env.GCP_VM_NAME }}
-        vm_zone=${{ env.GCP_VM_ZONE }}
-        region=${{ env.GCP_REGION }}
+        vm_name=${{ env[format('GCP_VM_NAME_{0}', matrix.server_index)] }}
+        vm_zone=${{ env[format('GCP_VM_ZONE_{0}', matrix.server_index)] }}
+        region=${{ env[format('GCP_REGION_{0}', matrix.server_index)] }}
         static_ips=()
         while (( retry_count < max_retries )); do
             CURRENT_IP=$(gcloud compute instances describe $vm_name --zone=$vm_zone --format='value(networkInterfaces[0].accessConfigs[0].natIP)')
