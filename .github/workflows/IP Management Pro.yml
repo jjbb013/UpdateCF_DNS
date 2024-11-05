@@ -25,19 +25,13 @@ jobs:
     - name: Read and Parse Server Config
       id: set-server-list
       run: |
-        server_list=$(yq e '.servers' servers.yaml | yq e -o=j -I=0 '.')
+        server_list=$(yq e '.servers' servers.yaml | jq -c .)
         echo "Server list: $server_list"  # 添加日志记录
         if [ -z "$server_list" ]; then
           echo "Error: Server list is empty or invalid."
           exit 1
         fi
-        # 验证 JSON 格式
-        echo "$server_list" | jq . > /dev/null
-        if [ $? -ne 0 ]; then
-          echo "Error: Server list is not valid JSON."
-          exit 1
-        fi
-        echo "server_list=$server_list" >> $GITHUB_OUTPUT
+        echo "server_list=$server_list" >> $GITHUB_ENV
 
   ip_management:
     needs: read_config
@@ -155,7 +149,7 @@ jobs:
         DNS_RECORDS=$(curl -s -X GET "https://api.cloudflare.com/client/v4/zones/${{ env.CF_ZONE_ID }}/dns_records?name=${{ env.DOMAIN }}" \
           -H "Authorization: Bearer ${{ env.CF_API_TOKEN }}" \
           -H "Content-Type: application/json")
-        DNS_ID=$(echo "${DNS_RECORDS}" | jq -r '.result[] | select(.name == "'${{ env.DOMAIN }}'") | .id')
+        DNS_ID=$(echo "${DNS_RECORDS}" | jq -r '.result[] | select(.name == "${{ env.DOMAIN }}") | .id')
         if [ -z "$DNS_ID" ]; then
           echo "No DNS record found for ${{ env.DOMAIN }}"
           exit 1
@@ -163,7 +157,6 @@ jobs:
           echo "DNS Record ID for ${{ env.DOMAIN }}: $DNS_ID"
           echo "DNS_ID=$DNS_ID" >> $GITHUB_ENV
         fi
-
     - name: Update DNS Record
       if: env.REACHABLE == 'false'
       run: |
