@@ -15,8 +15,8 @@ jobs:
       - name: Ping domains
         run: |
           while IFS= read -r line; do
-            domain=$(echo $line | cut -d':' -f1)
-            port=$(echo $line | cut -d':' -f2)
+            domain=$(echo "$line" | cut -d':' -f1)
+            port=$(echo "$line" | cut -d':' -f2)
             response=$(curl -s -o /dev/null -w "%{http_code}" "https://v2.api-m.com/api/tcping?address=$domain&port=$port")
             if [ "$response" == "200" ]; then
               echo "Domain $domain on port $port is reachable."
@@ -24,3 +24,4 @@ jobs:
               echo "Domain $domain on port $port is not reachable. Status code: $response"
             fi
           done < domains.txt
+        shell: /usr/bin/bash -e {0}
