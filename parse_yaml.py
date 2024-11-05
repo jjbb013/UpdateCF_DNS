@@ -13,17 +13,17 @@ def main():
             return
 
         # 解析服务器列表并设置环境变量
-        for server in servers['servers']:
+        for index, server in enumerate(servers['servers']):
             domain = server.get('domain')
             gcp_vm_name = server.get('gcp_vm_name')
             gcp_vm_zone = server.get('gcp_vm_zone')
             gcp_region = server.get('gcp_region')
 
             # 设置环境变量
-            os.environ[f'DOMAIN'] = domain
-            os.environ[f'GCP_VM_NAME'] = gcp_vm_name
-            os.environ[f'GCP_VM_ZONE'] = gcp_vm_zone
-            os.environ[f'GCP_REGION'] = gcp_region
+            os.environ[f'DOMAIN_{index}'] = domain
+            os.environ[f'GCP_VM_NAME_{index}'] = gcp_vm_name
+            os.environ[f'GCP_VM_ZONE_{index}'] = gcp_vm_zone
+            os.environ[f'GCP_REGION_{index}'] = gcp_region
 
         print("Environment variables set successfully.")
 
