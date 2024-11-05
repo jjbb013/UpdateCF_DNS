@@ -26,7 +26,7 @@ jobs:
       id: set-server-list
       run: |
         server_list=$(yq e '.servers' servers.yaml | yq e -o=j -I=0 '.')
-        echo "::set-output name=server_list::${server_list}"
+        echo "server_list=$server_list" >> $GITHUB_OUTPUT
 
   ip_management:
     needs: read_config
