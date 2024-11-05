@@ -1,3 +1,2 @@
-# domains.txt
 apple.com:80
 baidu.com:80
