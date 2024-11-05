@@ -1,0 +1,12 @@
+# servers.yaml
+servers:
+  - name: GCP 011 TW2 Pro
+    domain: gcp.tw2.onemorething.pp.ua
+    gcp_vm_name: instance-tw2
+    gcp_vm_zone: asia-east1-b
+    gcp_region: asia-east1
+  - name: GCP 011 Oregon Pro
+    domain: gcp.oregon.onemorething.pp.ua
+    gcp_vm_name: instance-oregon
+    gcp_vm_zone: us-west1-c
+    gcp_region: us-west1
