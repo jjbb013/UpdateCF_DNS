@@ -1,8 +1,8 @@
 name: IP Management Pro
 
 on:
-  #schedule:
-  #  - cron: '0 */3 * * *' # 每3小时运行一次
+  schedule:
+    - cron: '0 */3 * * *' # 每3小时运行一次
   workflow_dispatch:
 
 env:
@@ -14,11 +14,26 @@ env:
   CF_API_TOKEN: ${{ secrets.CF_API_TOKEN }}
 
 jobs:
+  read_config:
+    runs-on: ubuntu-latest
+    outputs:
+      server_list: ${{ steps.set-server-list.outputs.server_list }}
+    steps:
+    - name: Checkout Repository
+      uses: actions/checkout@v2
+
+    - name: Read and Parse Server Config
+      id: set-server-list
+      run: |
+        server_list=$(yq e '.servers' servers.yaml | yq e -o=j -I=0 '.')
+        echo "::set-output name=server_list::${server_list}"
+
   ip_management:
+    needs: read_config
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        server: ${{ fromJson(readFile('servers.yaml'))['servers'] }}
+        server: ${{ fromJson(needs.read_config.outputs.server_list) }}
 
     steps:
     - name: Checkout Repository
