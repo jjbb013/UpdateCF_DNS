@@ -58,9 +58,6 @@ jobs:
         echo "GCP_VM_ZONE: $GCP_VM_ZONE"
         echo "GCP_REGION: $GCP_REGION"
 
-    steps:
-    - name: Checkout Repository
-      uses: actions/checkout@v2
 
     - name: Authentication
       uses: google-github-actions/auth@v2
