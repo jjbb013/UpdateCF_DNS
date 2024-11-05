@@ -26,6 +26,7 @@ jobs:
       id: set-server-list
       run: |
         server_list=$(yq e '.servers' servers.yaml | yq e -o=j -I=0 '.')
+        echo "Server list: $server_list"  # 添加日志记录
         echo "server_list=$server_list" >> $GITHUB_OUTPUT
 
   ip_management:
@@ -38,6 +39,11 @@ jobs:
     steps:
     - name: Checkout Repository
       uses: actions/checkout@v2
+
+    - name: Debug Output
+      run: |
+        echo "Server list from read_config: ${{ needs.read_config.outputs.server_list }}"
+        echo "Parsed server list: ${{ fromJson(needs.read_config.outputs.server_list) }}"
 
     - name: Load Server Config
       id: load-server-config
