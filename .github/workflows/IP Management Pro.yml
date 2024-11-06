@@ -25,9 +25,8 @@ jobs:
     - name: Read and Parse Server Config
       id: set-server-list
       run: |
-        server_list=$(cat servers.txt | tr '\n' ',' | sed 's/,$//' | sed 's/,/","/g')
-        # 将 server_list 包装成 JSON 数组
-        json_server_list=$(echo "[\"$server_list\"]" | sed 's/^\[\(.*\)\]$/[\1]/')
+        server_list=$(cat servers.txt | awk -F: '{print "{\"domain\":\"" $1 "\", \"vm_name\":\"" $2 "\", \"region\":\"" $3 "\", \"zone\":\"" $4 "\"}"}' | tr '\n' ',' | sed 's/,$//')
+        json_server_list="[${server_list}]"
         echo "JSON Server list: $json_server_list"  # 添加日志记录
         if [ -z "$json_server_list" ]; then
           echo "Error: Server list is empty or invalid."
@@ -63,7 +62,10 @@ jobs:
     - name: Load Server Config
       id: load-server-config
       run: |
-        IFS=':' read -r DOMAIN GCP_VM_NAME GCP_REGION GCP_VM_ZONE <<< "${{ matrix.server }}"
+        DOMAIN=${{ matrix.server.domain }}
+        GCP_VM_NAME=${{ matrix.server.vm_name }}
+        GCP_REGION=${{ matrix.server.region }}
+        GCP_VM_ZONE=${{ matrix.server.zone }}
         echo "DOMAIN=$DOMAIN" >> $GITHUB_ENV
         echo "GCP_VM_NAME=$GCP_VM_NAME" >> $GITHUB_ENV
         echo "GCP_VM_ZONE=$GCP_VM_ZONE" >> $GITHUB_ENV
