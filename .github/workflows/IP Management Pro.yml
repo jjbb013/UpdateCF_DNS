@@ -26,7 +26,7 @@ jobs:
       id: set-server-list
       run: |
         # 读取 servers.txt 文件并解析每行内容
-        server_list=$(cat servers.txt | awk -F: '{print "{\"domain\":\"" $1 "\", \"vm_name\":\"" $2 "\", \"region\":\"" $3 "\", \"zone\":\"" $4 "\"}"}' | paste -sd ',' -)
+        server_list=$(cat servers.txt | awk -F: '{split($3, parts, "-"); print "{\"domain\":\"" $1 "\", \"vm_name\":\"" $2 "\", \"region\":\"" parts[1] "\", \"zone\":\"" $3 "\"}"}' | paste -sd ',' -)
         json_server_list="[$server_list]"
         echo "JSON Server list: $json_server_list"  # 添加日志记录
         if [ -z "$json_server_list" ]; then
