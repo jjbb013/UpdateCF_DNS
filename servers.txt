@@ -1,2 +1,2 @@
 gcp.tw2.onemorething.pp.ua:instance-tw2:asia-east1:asia-east1-b
-gcp.oregon.onemorething.pp.ua:instance-oregon:us-west1-us-west1-c
+gcp.oregon.onemorething.pp.ua:instance-oregon:us-west1:us-west1-c
