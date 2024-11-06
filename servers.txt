@@ -3,4 +3,3 @@ gcp.oregon.onemorething.pp.ua:instance-oregon:us-west1:us-west1-c
 gcp.hk.onemorething.pp.ua:instance-hk:asia-east2:asia-east2-a
 gcp.hk2.onemorething.pp.ua:instance-hk2:asia-east2:asia-east2-b
 gcp.osaka.onemorething.pp.ua:instance-osaka:asia-northeast2:asia-northeast2-c
-
