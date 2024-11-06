@@ -38,7 +38,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        server: ${{ fromJson(format('[%s]', steps.set-server-list.outputs.server_list)) }}
+        server: ${{ fromJson(format('[%s]', needs.read_config.outputs.server_list)) }}
 
     steps:
     - name: Checkout Repository
@@ -68,7 +68,7 @@ jobs:
     - name: Load Server Config
       id: load-server-config
       run: |
-        IFS=':' read -r DOMAIN GCP_VM_NAME GCP_REGION GCP_VM_ZONE <<< "${{ env.server_list }}"
+        IFS=':' read -r DOMAIN GCP_VM_NAME GCP_REGION GCP_VM_ZONE <<< "${{ matrix.server }}"
         echo "DOMAIN=$DOMAIN" >> $GITHUB_ENV
         echo "GCP_VM_NAME=$GCP_VM_NAME" >> $GITHUB_ENV
         echo "GCP_VM_ZONE=$GCP_VM_ZONE" >> $GITHUB_ENV
@@ -186,11 +186,4 @@ jobs:
 
     - name: Log Summary
       if: always()
-      run: |
-        if [ "${{ env.REACHABLE }}" == 'true' ]; then
-          echo "Summary: Domain was reachable. No action taken."
-        elif [ -n "$NEW_IP" ]; then
-          echo "Summary: DNS record updated to $NEW_IP after instance reconfiguration."
-        else
-          echo "Summary: Unexpected error occurred. No DNS update performed."
-        fi
+      run:
