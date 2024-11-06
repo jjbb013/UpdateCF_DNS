@@ -1,8 +1,8 @@
 name: IP Management Pro
 
 on:
-  #schedule:
-  #  - cron: '0 */3 * * *' # 每3小时运行一次
+  schedule:
+    - cron: '0 */3 * * *' # 每3小时运行一次
   workflow_dispatch:
 
 env:
@@ -38,7 +38,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        server: ${{ fromJson(format('[%s]', needs.read_config.outputs.server_list | replace(',', '","')))}}
+        server: ${{ fromJson(format('[%s]', steps.set-server-list.outputs.server_list)) }}
 
     steps:
     - name: Checkout Repository
@@ -58,10 +58,17 @@ jobs:
           exit 1
         fi
 
+    - name: Replace Commas in Server List
+      id: replace-commas
+      run: |
+        server_list=$(echo "${{ needs.read_config.outputs.server_list }}" | sed 's/,/","/g')
+        echo "Replaced commas in server list: $server_list"
+        echo "server_list=$server_list" >> $GITHUB_ENV
+
     - name: Load Server Config
       id: load-server-config
       run: |
-        IFS=':' read -r DOMAIN GCP_VM_NAME GCP_REGION GCP_VM_ZONE <<< "${{ matrix.server }}"
+        IFS=':' read -r DOMAIN GCP_VM_NAME GCP_REGION GCP_VM_ZONE <<< "${{ env.server_list }}"
         echo "DOMAIN=$DOMAIN" >> $GITHUB_ENV
         echo "GCP_VM_NAME=$GCP_VM_NAME" >> $GITHUB_ENV
         echo "GCP_VM_ZONE=$GCP_VM_ZONE" >> $GITHUB_ENV
