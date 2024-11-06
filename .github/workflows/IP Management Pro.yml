@@ -26,19 +26,21 @@ jobs:
       id: set-server-list
       run: |
         server_list=$(cat servers.txt | tr '\n' ',' | sed 's/,$//' | sed 's/,/","/g')
-        echo "Server list: $server_list"  # 添加日志记录
-        if [ -z "$server_list" ]; then
+        # 将 server_list 包装成 JSON 数组
+        json_server_list=$(echo "[\"$server_list\"]" | sed 's/^\[\(.*\)\]$/[\1]/')
+        echo "JSON Server list: $json_server_list"  # 添加日志记录
+        if [ -z "$json_server_list" ]; then
           echo "Error: Server list is empty or invalid."
           exit 1
         fi
-        echo "server_list=$server_list" >> $GITHUB_OUTPUT
+        echo "server_list=$json_server_list" >> $GITHUB_OUTPUT
 
   ip_management:
     needs: read_config
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        server: ${{ fromJson(format('[%s]', needs.read_config.outputs.server_list)) }}
+        server: ${{ fromJson(needs.read_config.outputs.server_list) }}
 
     steps:
     - name: Checkout Repository
