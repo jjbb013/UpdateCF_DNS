@@ -1,8 +1,8 @@
 name: Ping Check with Bark Notification
 
 on:
-  schedule:
-    - cron: '0 */7 * * *'  # 每7小时执行一次
+  #schedule:
+  #  - cron: '0 */7 * * *'  # 每7小时执行一次
   workflow_dispatch:
 
 jobs:
