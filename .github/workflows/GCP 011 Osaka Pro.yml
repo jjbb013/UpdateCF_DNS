@@ -1,8 +1,8 @@
 name: GCP 011 Osaka Check Connectivity and Update DNS
 
 on:
-  schedule:
-    - cron: '0 */3 * * *' # 每3小时运行一次
+  #schedule:
+  #  - cron: '0 */3 * * *' # 每3小时运行一次
   workflow_dispatch:
 
 env:
@@ -11,7 +11,7 @@ env:
   GCP_VM_ZONE: 'asia-northeast2-c'
   GCP_VM_NAME: 'instance-osaka'
   GCP_REGION: 'asia-northeast2'
-  DOMAIN: 'gcp.hk.onemorething.pp.ua'
+  DOMAIN: 'gcp.osaka.onemorething.pp.ua'
   CF_ZONE_ID: 1fa9774064820f53fe1733e37a19f721
   PORT: 1081
   PROXIED: 'false' # 是否开启Cloudflare代理，默认否
