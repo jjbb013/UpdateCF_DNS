@@ -38,7 +38,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        server: ${{ fromJson(format('[%s]', needs.read_config.outputs.server_list)) }}
+        server: ${{ fromJson(format('[%s]', replace(needs.read_config.outputs.server_list, ',', '","'))) }}
 
     steps:
     - name: Checkout Repository
@@ -57,13 +57,6 @@ jobs:
           echo "Error: Parsed server list is empty or invalid."
           exit 1
         fi
-
-    - name: Replace Commas in Server List
-      id: replace-commas
-      run: |
-        server_list=$(echo "${{ needs.read_config.outputs.server_list }}" | sed 's/,/","/g')
-        echo "Replaced commas in server list: $server_list"
-        echo "server_list=$server_list" >> $GITHUB_ENV
 
     - name: Load Server Config
       id: load-server-config
@@ -186,4 +179,11 @@ jobs:
 
     - name: Log Summary
       if: always()
-      run:
+      run: |
+        if [ "${{ env.REACHABLE }}" == 'true' ]; then
+          echo "Summary: Domain was reachable. No action taken."
+        elif [ -n "$NEW_IP" ]; then
+          echo "Summary: DNS record updated to $NEW_IP after instance reconfiguration."
+        else
+          echo "Summary: Unexpected error occurred. No DNS update performed."
+        fi
