@@ -38,7 +38,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        server: ${{ fromJson(format('[{}]', replace(needs.read_config.outputs.server_list, ',', '","')))}}
+        server: ${{ fromJson(format('[%s]', needs.read_config.outputs.server_list | replace(',', '","')))}}
 
     steps:
     - name: Checkout Repository
