@@ -1,8 +1,8 @@
 name: AWS Pro
 
 on:
-  schedule:
-    - cron: '0 */2 * * *' # 每2小时执行一次
+  #schedule:
+  #  - cron: '0 */2 * * *' # 每2小时执行一次
   workflow_dispatch:
 
 env:
