@@ -53,21 +53,25 @@ jobs:
         echo "Region: $REGION"
         echo "Access Key ID: $ACCESS_KEY"
         echo "Secret Access Key: $SECRET_KEY"
-        echo "Domain=$DOMAIN" >> $GITHUB_ENV
+        echo "DOMAIN=$DOMAIN" >> $GITHUB_ENV
+        echo "INSTANCE_ID=$INSTANCE_ID" >> $GITHUB_ENV
+        echo "REGION=$REGION" >> $GITHUB_ENV
+        echo "ACCESS_KEY=$ACCESS_KEY" >> $GITHUB_ENV
+        echo "SECRET_KEY=$SECRET_KEY" >> $GITHUB_ENV
 
     - name: Check Connectivity
       id: ping_check
       run: |
         DOMAIN=${{ env.DOMAIN }}
-        API_URL="https://v2.api-m.com/api/tcping?address=${{ env.DOMAIN }}&port=1081"
+        API_URL="https://v2.api-m.com/api/tcping?address=${DOMAIN}&port=1081"
         response=$(curl -sL $API_URL)
         echo "Response for domain $DOMAIN: $response"
         if [[ $response == *"200"* ]]; then
           echo "Domain is reachable at $(date)"
-          echo "::set-output name=pingable::true"
+          echo "pingable=true" >> $GITHUB_OUTPUT
         else
           echo "Domain is NOT reachable at $(date)"
-          echo "::set-output name=pingable::false"
+          echo "pingable=false" >> $GITHUB_OUTPUT
         fi
 
     - name: Configure AWS Credentials
