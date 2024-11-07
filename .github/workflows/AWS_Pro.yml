@@ -22,7 +22,7 @@ jobs:
     - name: Read and Parse Server Config
       id: set-server-list
       run: |
-        server_list=$(cat servers.txt | tr '\n' ',' | sed 's/,$//' | sed 's/,/","/g')
+        server_list=$(cat aws_servers.txt | tr '\n' ',' | sed 's/,$//' | sed 's/,/","/g')
         # 将 server_list 包装成 JSON 数组
         json_server_list=$(echo "[\"$server_list\"]" | sed 's/^\[\(.*\)\]$/[\1]/')
         echo "JSON Server list: $json_server_list"  # 添加日志记录
