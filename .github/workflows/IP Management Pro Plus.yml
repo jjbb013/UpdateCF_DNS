@@ -120,19 +120,24 @@ jobs:
             CURRENT_IP=$(gcloud compute instances describe $vm_name --zone=$vm_zone --format='value(networkInterfaces[0].accessConfigs[0].natIP)')
             CURRENT_ACCESS_CONFIG_NAME=$(gcloud compute instances describe "$vm_name" --zone="$vm_zone" --format='value(networkInterfaces[0].accessConfigs[0].name)')
             STATIC_IP_NAME="${vm_name}-static-ip-$(date +%s)"
+            
             # 检查静态 IP 是否已经存在
-            existing_ip=$(gcloud compute addresses describe $STATIC_IP_NAME --region=$region --format='value(name)' || true)
+            existing_ip=$(gcloud compute addresses describe $STATIC_IP_NAME --region=$region --format='value(name)' 2>/dev/null || true)
             if [ -n "$existing_ip" ]; then
                 echo "Deleting existing static IP: $existing_ip"
                 gcloud compute addresses delete $STATIC_IP_NAME --region=$region --quiet
             fi
+            
             gcloud compute addresses create $STATIC_IP_NAME --addresses=$CURRENT_IP --region=$region
             static_ips+=("$STATIC_IP_NAME")
+            
             gcloud compute instances delete-access-config $vm_name --zone=$vm_zone --access-config-name=$CURRENT_ACCESS_CONFIG_NAME
             gcloud compute instances add-access-config $vm_name --zone=$vm_zone --access-config-name=$CURRENT_ACCESS_CONFIG_NAME
+            
             NEW_IP=$(gcloud compute instances describe $vm_name --zone=$vm_zone --format='value(networkInterfaces[0].accessConfigs[0].natIP)')
-            API_URL="https://api.jaxing.cc/v2/Tcping?host=$NEW_IP&port=${{ env.PORT }}"
+            API_URL="https://api.jaxing.cc/v2/Tcping?host=$NEW_IP&port=1081"
             response=$(curl -sL "$API_URL")
+            
             if [[ $response == *'"msg":"请求成功"'* ]] && ! echo "$response" | grep -q '"dial tcp'; then
                 echo "New IP $NEW_IP is reachable, proceeding with the rest of the process."
                 echo "NEW_IP=$NEW_IP" >> $GITHUB_ENV
@@ -143,15 +148,16 @@ jobs:
                 sleep 5
             fi
         done
+        
         if [ $retry_count -eq $max_retries ]; then
             echo "Reached maximum retries, unable to configure VM."
         else
             echo "VM is now using a reachable IP: $NEW_IP"
         fi
+        
         for STATIC_IP in "${static_ips[@]}"; do
             gcloud compute addresses delete $STATIC_IP --region=$region --quiet
         done
-
     - name: Get Cloudflare DNS Record ID
       if: env.REACHABLE == 'false'
       run: |
