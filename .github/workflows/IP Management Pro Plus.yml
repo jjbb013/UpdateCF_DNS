@@ -132,7 +132,7 @@ jobs:
             static_ips+=("$STATIC_IP_NAME")
             
             gcloud compute instances delete-access-config $vm_name --zone=$vm_zone --access-config-name=$CURRENT_ACCESS_CONFIG_NAME
-            gcloud compute instances add-access-config $vm_name --zone=$vm_zone --access-config-name=$CURRENT_ACCESS_CONFIG_NAME
+            gcloud compute instances add-access-config $vm_name --zone=$vm_zone
             
             NEW_IP=$(gcloud compute instances describe $vm_name --zone=$vm_zone --format='value(networkInterfaces[0].accessConfigs[0].natIP)')
             API_URL="https://api.jaxing.cc/v2/Tcping?host=$NEW_IP&port=1081"
