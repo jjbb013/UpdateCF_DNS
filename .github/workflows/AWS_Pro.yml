@@ -1,8 +1,8 @@
-name: AWS Multi-Account Healthcheck and EC2 Management
+name: AWS Pro
 
 on:
-  #schedule:
-  #  - cron: '0 */2 * * *' # 每2小时执行一次
+  schedule:
+    - cron: '0 */2 * * *' # 每2小时执行一次
   workflow_dispatch:
 
 env:
@@ -68,12 +68,14 @@ jobs:
         aws configure set aws_access_key_id $ACCESS_KEY
         aws configure set aws_secret_access_key $SECRET_KEY
         aws configure set region $REGION
+        echo "AWS_REGION=$REGION" >> $GITHUB_ENV
+        echo "INSTANCE_ID=$INSTANCE_ID" >> $GITHUB_ENV
 
     - name: Manage EC2
       if: steps.ping_check.outputs.pingable == 'false'
       env:
-        AWS_REGION: ${{ matrix.server | split(':') | element(2) }}
-        INSTANCE_ID: ${{ matrix.server | split(':') | element(1) }}
+        AWS_REGION: ${{ env.AWS_REGION }}
+        INSTANCE_ID: ${{ env.INSTANCE_ID }}
       run: |
         echo "Stopping EC2 instance..."
         aws ec2 stop-instances --instance-ids $INSTANCE_ID --region $AWS_REGION
@@ -88,8 +90,8 @@ jobs:
     - name: Get New Public IP
       if: steps.ping_check.outputs.pingable == 'false'
       env:
-        AWS_REGION: ${{ matrix.server | split(':') | element(2) }}
-        INSTANCE_ID: ${{ matrix.server | split(':') | element(1) }}
+        AWS_REGION: ${{ env.AWS_REGION }}
+        INSTANCE_ID: ${{ env.INSTANCE_ID }}
       run: |
         NEW_IP=$(aws ec2 describe-instances --instance-ids $INSTANCE_ID --region $AWS_REGION --query 'Reservations[0].Instances[0].PublicIpAddress' --output text)
         echo "New Public IP: $NEW_IP"
@@ -98,6 +100,7 @@ jobs:
     - name: Get Cloudflare DNS Record ID
       if: steps.ping_check.outputs.pingable == 'false'
       run: |
+        IFS=':' read -r DOMAIN INSTANCE_ID REGION ACCESS_KEY SECRET_KEY <<< "${{ matrix.server }}"
         # 使用cURL调用Cloudflare API获取DNS记录ID
         DNS_RECORDS=$(curl -s -X GET "https://api.cloudflare.com/client/v4/zones/${{ env.CF_ZONE_ID }}/dns_records?name=${{ env.DOMAIN }}" \
           -H "Authorization: Bearer ${{ env.CF_API_TOKEN }}" \
@@ -136,6 +139,7 @@ jobs:
     - name: Log Summary
       if: always()
       run: |
+        IFS=':' read -r DOMAIN INSTANCE_ID REGION ACCESS_KEY SECRET_KEY <<< "${{ matrix.server }}"
         if [ "${{ steps.ping_check.outputs.pingable }}" == 'true' ]; then
           echo "Summary: Domain was reachable. No action taken."
         elif [ -n "${{ env.NEW_IP }}" ]; then
