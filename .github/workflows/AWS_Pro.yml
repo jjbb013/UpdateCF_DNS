@@ -44,13 +44,24 @@ jobs:
     - name: Checkout Repository
       uses: actions/checkout@v2
 
+    - name: Print Domain Information
+      id: print_domain_info
+      run: |
+        IFS=':' read -r DOMAIN INSTANCE_ID REGION ACCESS_KEY SECRET_KEY <<< "${{ matrix.server }}"
+        echo "Domain: $DOMAIN"
+        echo "Instance ID: $INSTANCE_ID"
+        echo "Region: $REGION"
+        echo "Access Key ID: $ACCESS_KEY"
+        echo "Secret Access Key: $SECRET_KEY"
+        echo "Domain=$DOMAIN" >> $GITHUB_ENV
+
     - name: Check Connectivity
       id: ping_check
       run: |
-        IFS=':' read -r DOMAIN INSTANCE_ID REGION ACCESS_KEY SECRET_KEY <<< "${{ matrix.server }}"
+        DOMAIN=${{ env.DOMAIN }}
         API_URL="https://v2.api-m.com/api/tcping?address=${{ env.DOMAIN }}&port=1081"
         response=$(curl -sL $API_URL)
-        echo "Response for domain ${{ env.DOMAIN }}: $response"
+        echo "Response for domain $DOMAIN: $response"
         if [[ $response == *"200"* ]]; then
           echo "Domain is reachable at $(date)"
           echo "::set-output name=pingable::true"
