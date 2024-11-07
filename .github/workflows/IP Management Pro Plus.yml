@@ -156,7 +156,7 @@ jobs:
         fi
         
         for STATIC_IP in "${static_ips[@]}"; do
-            gcloud compute addresses delete $STATIC_IP --region=$region --quiet
+            gcloud compute addresses delete $STATIC_IP --region=$region
         done
     - name: Get Cloudflare DNS Record ID
       if: env.REACHABLE == 'false'
