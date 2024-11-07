@@ -39,12 +39,16 @@ jobs:
     needs: read_config
     runs-on: ubuntu-latest
     strategy:
+      fail-fast: false # 如果一个作业失败，其他作业将继续运行
       matrix:
         server: ${{ fromJson(needs.read_config.outputs.server_list) }}
 
     steps:
     - name: Checkout Repository
       uses: actions/checkout@v2
+
+    - name: Delay to avoid simultaneous operations
+      run: sleep $(( (RANDOM % 60) + 1 ))s # 随机等待1到60秒，以避免完全同步
 
     - name: Debug Output
       run: |
@@ -158,6 +162,7 @@ jobs:
         for STATIC_IP in "${static_ips[@]}"; do
             gcloud compute addresses delete $STATIC_IP --region=$region
         done
+
     - name: Get Cloudflare DNS Record ID
       if: env.REACHABLE == 'false'
       run: |
