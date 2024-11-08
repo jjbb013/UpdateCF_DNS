@@ -1,4 +1,4 @@
-name: AWS Osaka Pro
+name: Stoping_AWS Osaka Pro
 
 on:
   workflow_dispatch:
