@@ -1,0 +1,207 @@
+name: AWS Pro Try 5 Time
+
+on:
+  #schedule:
+  #  - cron: '0 */2 * * *' # 每2小时执行一次
+  workflow_dispatch:
+
+env:
+  CF_ZONE_ID: 1fa9774064820f53fe1733e37a19f721
+  CF_API_TOKEN: ${{ secrets.CF_API_TOKEN }} # 从GitHub Secrets中获取API Token
+  PROXIED: 'false' # 是否开启Cloudflare代理，默认否
+  MAX_RETRIES: 5
+  
+jobs:
+  read_config:
+    runs-on: ubuntu-latest
+    outputs:
+      server_list: ${{ steps.set-server-list.outputs.server_list }}
+    steps:
+    - name: Checkout Repository
+      uses: actions/checkout@v2
+
+    - name: Read and Parse Server Config
+      id: set-server-list
+      run: |
+        server_list=$(cat aws_servers.txt | tr '\n' ',' | sed 's/,$//' | sed 's/,/","/g')
+        # 将 server_list 包装成 JSON 数组
+        json_server_list=$(echo "[\"$server_list\"]" | sed 's/^\[\(.*\)\]$/[\1]/')
+        echo "JSON Server list: $json_server_list"  # 添加日志记录
+        if [ -z "$json_server_list" ]; then
+          echo "Error: Server list is empty or invalid."
+          exit 1
+        fi
+        echo "server_list=$json_server_list" >> $GITHUB_OUTPUT
+
+  healthcheck_and_manage_ec2:
+    needs: read_config
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false # 如果一个作业失败，其他作业将继续运行
+      matrix:
+        server: ${{ fromJson(needs.read_config.outputs.server_list) }}
+
+    steps:
+    - name: Checkout Repository
+      uses: actions/checkout@v2
+
+    - name: Print Domain Information
+      id: print_domain_info
+      run: |
+        IFS=':' read -r DOMAIN INSTANCE_ID REGION ACCESS_KEY SECRET_KEY <<< "${{ matrix.server }}"
+        echo "Domain: $DOMAIN"
+        echo "Instance ID: $INSTANCE_ID"
+        echo "Region: $REGION"
+        echo "Access Key ID: $ACCESS_KEY"
+        echo "Secret Access Key: $SECRET_KEY"
+        echo "DOMAIN=$DOMAIN" >> $GITHUB_ENV
+        echo "INSTANCE_ID=$INSTANCE_ID" >> $GITHUB_ENV
+        echo "REGION=$REGION" >> $GITHUB_ENV
+        echo "ACCESS_KEY=$ACCESS_KEY" >> $GITHUB_ENV
+        echo "SECRET_KEY=$SECRET_KEY" >> $GITHUB_ENV
+
+    - name: Check Connectivity
+      id: ping_check
+      run: |
+        DOMAIN=${{ env.DOMAIN }}
+        API_URL="https://v2.api-m.com/api/tcping?address=${{ env.DOMAIN }}&port=1081"
+        response=$(curl -sL $API_URL)
+        echo "Response for domain $DOMAIN: $response"
+        if [[ $response == *"200"* ]]; then
+          echo "Domain is reachable at $(date)"
+          echo "pingable=true" >> $GITHUB_OUTPUT
+        else
+          echo "Domain is NOT reachable at $(date)"
+          echo "pingable=false" >> $GITHUB_OUTPUT
+        fi
+
+    - name: Configure AWS Credentials
+      if: steps.ping_check.outputs.pingable == 'false'
+      id: configure_aws_credentials
+      uses: aws-actions/configure-aws-credentials@v1
+      with:
+        aws-access-key-id: ${{ secrets[env.ACCESS_KEY] }}
+        aws-secret-access-key: ${{ secrets[env.SECRET_KEY] }}
+        aws-region: ${{ env.REGION }}
+
+    - name: Manage EC2
+      if: steps.ping_check.outputs.pingable == 'false'
+      env:
+        AWS_REGION: ${{ env.AWS_REGION }}
+        INSTANCE_ID: ${{ env.INSTANCE_ID }}
+      run: |
+        for (( i=1; i<=${{ env.MAX_RETRIES }}; i++ )); do
+          echo "Attempt $i to restart EC2 instance..."
+          aws ec2 stop-instances --instance-ids $INSTANCE_ID --region $AWS_REGION
+          echo "Waiting for EC2 instance to stop..."
+          aws ec2 wait instance-stopped --instance-ids $INSTANCE_ID --region $AWS_REGION
+          
+          echo "Waiting 10 seconds before starting the instance again..."
+          sleep 10
+          
+          echo "Starting EC2 instance..."
+          aws ec2 start-instances --instance-ids $INSTANCE_ID --region $AWS_REGION
+          echo "Waiting for EC2 instance to start..."
+          aws ec2 wait instance-running --instance-ids $INSTANCE_ID --region $AWS_REGION
+
+          # 获取新的IP并检查可达性
+          NEW_IP=$(aws ec2 describe-instances --instance-ids $INSTANCE_ID --region $AWS_REGION --query 'Reservations[0].Instances[0].PublicIpAddress' --output text)
+          echo "New Public IP: $NEW_IP"
+          sleep 30
+          API_URL="https://api.jaxing.cc/v2/Tcping?host=${NEW_IP}&port=1081"
+          response=$(curl -s $API_URL)
+          
+          echo "Response: $response"
+          if [[ $response == *'"msg":"请求成功"'* ]]; then
+            if echo $response | grep -q '"dial tcp'; then
+              echo "New IP is NOT pingable."
+              if [ $i -eq ${{ env.MAX_RETRIES }} ]; then
+                echo "Max retries reached. Exiting."
+                exit 1
+              fi
+            else
+              echo "New IP is pingable."
+              echo "NEW_IP=$NEW_IP" >> $GITHUB_ENV
+              break
+            fi
+          else
+            echo "TCPing 请求失败，未收到成功消息。"
+            if [ $i -eq ${{ env.MAX_RETRIES }} ]; then
+              echo "Max retries reached. Exiting."
+              exit 1
+            fi
+          fi
+
+          sleep 5 # 等待一段时间再重试
+        done
+        #####
+        #echo "Stopping EC2 instance..."
+        #aws ec2 stop-instances --instance-ids $INSTANCE_ID --region $AWS_REGION
+        #echo "Waiting for instance to stop..."
+        #aws ec2 wait instance-stopped --instance-ids $INSTANCE_ID --region $AWS_REGION
+        #echo "Starting EC2 instance..."
+        #aws ec2 start-instances --instance-ids $INSTANCE_ID --region $AWS_REGION
+        #echo "Waiting for instance to start..."
+        #aws ec2 wait instance-running --instance-ids $INSTANCE_ID --region $AWS_REGION
+        #echo "Instance restarted."
+
+    - name: Get New Public IP
+      if: steps.ping_check.outputs.pingable == 'false'
+      env:
+        AWS_REGION: ${{ env.AWS_REGION }}
+        INSTANCE_ID: ${{ env.INSTANCE_ID }}
+      run: |
+        NEW_IP=$(aws ec2 describe-instances --instance-ids $INSTANCE_ID --region $AWS_REGION --query 'Reservations[0].Instances[0].PublicIpAddress' --output text)
+        echo "New Public IP: $NEW_IP"
+        echo "NEW_IP=$NEW_IP" >> $GITHUB_ENV
+
+    - name: Get Cloudflare DNS Record ID
+      if: steps.ping_check.outputs.pingable == 'false'
+      run: |
+        IFS=':' read -r DOMAIN INSTANCE_ID REGION ACCESS_KEY SECRET_KEY <<< "${{ matrix.server }}"
+        # 使用cURL调用Cloudflare API获取DNS记录ID
+        DNS_RECORDS=$(curl -s -X GET "https://api.cloudflare.com/client/v4/zones/${{ env.CF_ZONE_ID }}/dns_records?name=${{ env.DOMAIN }}" \
+          -H "Authorization: Bearer ${{ env.CF_API_TOKEN }}" \
+          -H "Content-Type: application/json")
+        DNS_ID=$(echo "${DNS_RECORDS}" | jq -r '.result[] | select(.name == "'${{ env.DOMAIN }}'") | .id')
+        if [ -z "$DNS_ID" ]; then
+          echo "No DNS record found for ${{ env.DOMAIN }}"
+          exit 1
+        else
+          echo "DNS Record ID for ${{ env.DOMAIN }}: $DNS_ID"
+          echo "DNS_ID=$DNS_ID" >> $GITHUB_ENV
+        fi
+
+    - name: Update DNS Record
+      if: steps.ping_check.outputs.pingable == 'false'
+      run: |
+        # 构建cURL请求命令，使用先前获取到的DNS_ID
+        UPDATE_CMD=$(echo -n "{\"type\":\"A\",\"name\":\"${{ env.DOMAIN }}\",\"content\":\"$NEW_IP\",\"proxied\":${{ env.PROXIED }}}")
+        curl -X PUT "https://api.cloudflare.com/client/v4/zones/${{ env.CF_ZONE_ID }}/dns_records/${{ env.DNS_ID }}" \
+          -H "Authorization: Bearer ${{ env.CF_API_TOKEN }}" \
+          -H "Content-Type: application/json" \
+          --data-raw "$UPDATE_CMD"
+
+        # 检查响应状态
+        RESPONSE=$(curl -s -o /dev/null -w "%{http_code}" "https://api.cloudflare.com/client/v4/zones/${{ env.CF_ZONE_ID }}/dns_records/${{ env.DNS_ID }}" \
+          -H "Authorization: Bearer ${{ env.CF_API_TOKEN }}" \
+          -H "Content-Type: application/json")
+
+        if [ "$RESPONSE" -eq 200 ]; then
+          echo "DNS record updated successfully."
+        else
+          echo "Failed to update DNS record. Response code: $RESPONSE"
+          exit 1
+        fi
+
+    - name: Log Summary
+      if: always()
+      run: |
+        IFS=':' read -r DOMAIN INSTANCE_ID REGION ACCESS_KEY SECRET_KEY <<< "${{ matrix.server }}"
+        if [ "${{ steps.ping_check.outputs.pingable }}" == 'true' ]; then
+          echo "Summary: Domain was reachable. No action taken."
+        elif [ -n "${{ env.NEW_IP }}" ]; then
+          echo "Summary: DNS record updated to ${{ env.NEW_IP }} after instance reconfiguration."
+        else
+          echo "Summary: Unexpected error occurred. No DNS update performed."
+        fi
