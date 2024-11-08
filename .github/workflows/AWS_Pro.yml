@@ -77,14 +77,11 @@ jobs:
     - name: Configure AWS Credentials
       if: steps.ping_check.outputs.pingable == 'false'
       id: configure_aws_credentials
-      run: |
-        IFS=':' read -r DOMAIN INSTANCE_ID REGION ACCESS_KEY SECRET_KEY <<< "${{ matrix.server }}"
-        echo "Configuring AWS credentials for $DOMAIN ($INSTANCE_ID) in $REGION"
-        aws configure set aws_access_key_id $ACCESS_KEY
-        aws configure set aws_secret_access_key $SECRET_KEY
-        aws configure set region $REGION
-        echo "AWS_REGION=$REGION" >> $GITHUB_ENV
-        echo "INSTANCE_ID=$INSTANCE_ID" >> $GITHUB_ENV
+      uses: aws-actions/configure-aws-credentials@v1
+      with:
+        aws-access-key-id: ${{ env.ACCESS_KEY }}
+        aws-secret-access-key: ${{ env.SECRET_KEY }}
+        aws-region: ${{ env.REGION }}
 
     - name: Manage EC2
       if: steps.ping_check.outputs.pingable == 'false'
