@@ -63,7 +63,7 @@ jobs:
       id: ping_check
       run: |
         DOMAIN=${{ env.DOMAIN }}
-        API_URL="https://v2.api-m.com/api/tcping?address=${DOMAIN}&port=1081"
+        API_URL="https://v2.api-m.com/api/tcping?address=${{ env.DOMAIN }}&port=1081"
         response=$(curl -sL $API_URL)
         echo "Response for domain $DOMAIN: $response"
         if [[ $response == *"200"* ]]; then
