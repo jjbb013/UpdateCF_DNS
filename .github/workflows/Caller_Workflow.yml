@@ -1,8 +1,0 @@
-name: 'Caller Workflow'
-on:
-  workflow_dispatch:
-jobs:
-  call-workflow:
-    uses: ./.github/workflows/Check_Domain_Connectivity.yml
-    with:
-      domain: 'gcp.hk.onemorething.pp.ua'
