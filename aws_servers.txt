@@ -1,5 +1,5 @@
 aws.useast1.onemorething.pp.ua:i-0f52819479f2d85f0:us-east-1:AWS_ACCESS_KEY_ID_USEAST1:AWS_SECRET_ACCESS_KEY_USEAST1
 aws.uswest2.onemorething.pp.ua:i-054a23d3489b26543:us-west-2:AWS_ACCESS_KEY_ID_Tokyo:AWS_SECRET_ACCESS_KEY_Tokyo
-ca.nets.pp.ua:i-032407fb843e2ee2e:us-west-1:AWS_ACCESS_KEY_ID_CA:AWS_SECRET_ACCESS_KEY_CA
+aws.ca.onemorething.pp.ua:i-032407fb843e2ee2e:us-west-1:AWS_ACCESS_KEY_ID_CA:AWS_SECRET_ACCESS_KEY_CA
 sydney.nets.pp.ua:i-0f0bb12dd41a6a754:ap-southeast-2:AWS_ACCESS_KEY_ID_Sydney:AWS_SECRET_ACCESS_KEY_Sydney
 osaka.onemorething.pp.ua:i-01636fd58d539173b:ap-northeast-3:AWS_ACCESS_KEY_ID_Osaka:AWS_SECRET_ACCESS_KEY_Osaka
