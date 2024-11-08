@@ -79,8 +79,8 @@ jobs:
       id: configure_aws_credentials
       uses: aws-actions/configure-aws-credentials@v1
       with:
-        aws-access-key-id: ${{ env.ACCESS_KEY }}
-        aws-secret-access-key: ${{ env.SECRET_KEY }}
+        aws-access-key-id: ${{ ${{ env.ACCESS_KEY }} }}
+        aws-secret-access-key: ${{ ${{ env.SECRET_KEY }} }}
         aws-region: ${{ env.REGION }}
 
     - name: Manage EC2
