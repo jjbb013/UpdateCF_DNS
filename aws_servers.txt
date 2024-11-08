@@ -1,2 +1,2 @@
-aws.useast1.onemorething.pp.ua:i-0f52819479f2d85f0:us-east-1:secrets.AWS_ACCESS_KEY_ID_USEAST1:secrets.AWS_SECRET_ACCESS_KEY_USEAST1
-aws.tokyo.onemorething.pp.ua:i-0e847507a4ed7e836:ap-northeast-1:secrets.AWS_ACCESS_KEY_ID_Tokyo:secrets.AWS_SECRET_ACCESS_KEY_Tokyo
+aws.useast1.onemorething.pp.ua:i-0f52819479f2d85f0:us-east-1:${{ secrets.AWS_ACCESS_KEY_ID_USEAST1 }}:${{ secrets.AWS_SECRET_ACCESS_KEY_USEAST1 }}
+aws.tokyo.onemorething.pp.ua:i-0e847507a4ed7e836:ap-northeast-1:${{ secrets.AWS_ACCESS_KEY_ID_Tokyo }}:${{ secrets.AWS_SECRET_ACCESS_KEY_Tokyo }}
