@@ -1,14 +1,14 @@
-name: Stoping_AWS CA Healthcheck and EC2 Management
+name: AWS CA Healthcheck and EC2 Management
 on:
-  #schedule:
-  #  - cron: '0 */2 * * *' # 每2小时执行一次
+  schedule:
+    - cron: '0 */2 * * *' # 每2小时执行一次
   workflow_dispatch:
 
 env:
   INSTANCE_ID: i-032407fb843e2ee2e
   REGION: us-west-1
-  DOMAIN: 'ca.nets.pp.ua' # 需要查询的DNS名称
-  CF_ZONE_ID: b2fc014bf87f67714afb1b9c10941a2e
+  DOMAIN: 'aws.ca.onemorething.pp.ua' # 需要查询的DNS名称
+  CF_ZONE_ID: 1fa9774064820f53fe1733e37a19f721
   CF_API_TOKEN: ${{ secrets.CF_API_TOKEN }} # 从GitHub Secrets中获取API Token
   PROXIED: 'false' # 是否开启Cloudflare代理，默认否
 
