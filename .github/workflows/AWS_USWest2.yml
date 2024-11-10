@@ -1,7 +1,7 @@
-name: Stoping_AWS US-West2 Healthcheck and EC2 Management
+name: AWS US-West2 Healthcheck and EC2 Management
 on:
-  #schedule:
-  #  - cron: '0 */2 * * *' # 每3小时执行一次
+  schedule:
+    - cron: '0 */2 * * *' # 每3小时执行一次
   workflow_dispatch:
 
 env:
