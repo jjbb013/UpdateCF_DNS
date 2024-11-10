@@ -1,4 +1,4 @@
-name: Stoping_AWS Osaka Healthcheck and EC2 Management
+name: AWS Osaka Healthcheck and EC2 Management
 on:
   schedule:
     - cron: '0 */3 * * *' # 每3小时执行一次
