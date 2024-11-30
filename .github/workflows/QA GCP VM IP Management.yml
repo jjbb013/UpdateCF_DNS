@@ -6,9 +6,9 @@ on:
 env:
   GCP_PROJECT_ID: sturdy-yen-432600-k2
   GCP_SA_KEY: ${{ secrets.GCP_SA_KEY_025 }}
-  GCP_VM_ZONE: 'asia-east2-c'
+  GCP_VM_ZONE: 'asia-east2-a'
   GCP_VM_NAME: 'instance-hk'
-  DOMAIN: 'hh.onemorething.pp.ua'
+  DOMAIN: 'hk.onemorething.pp.ua'
   CF_ZONE_ID: b2fc014bf87f67714afb1b9c10941a2e
   PORT: 1081
   PROXIED: 'false' # 是否开启Cloudflare代理，默认否
