@@ -1,7 +1,7 @@
 name: AWS Sydney Healthcheck and EC2 Management
 on:
-  schedule:
-    - cron: '0 */3 * * *' # 每3小时执行一次
+  #schedule:
+   # - cron: '0 */3 * * *' # 每3小时执行一次
   workflow_dispatch:
 
 env:
