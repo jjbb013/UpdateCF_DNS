@@ -37,8 +37,26 @@ jobs:
           echo "::set-output name=pingable::false"
         fi
 
+    - name: Check EC2 Instance Status
+      env:
+        AWS_REGION: ${{ env.REGION }}
+        INSTANCE_ID: ${{ env.INSTANCE_ID }}
+      run: |
+        echo "Checking EC2 instance status..."
+        INSTANCE_STATUS=$(aws ec2 describe-instances --instance-ids $INSTANCE_ID --region $AWS_REGION --query "Reservations[*].Instances[*].State.Name" --output text)
+    
+        echo "Current instance status: $INSTANCE_STATUS"
+    
+        if [ "$INSTANCE_STATUS" == "running" ]; then
+          echo "Instance is running, proceeding to manage instance..."
+          echo "::set-output name=instance_running::true"
+        else
+          echo "Instance is not running, skipping management steps..."
+          echo "::set-output name=instance_running::false"
+        fi
+    
     - name: Manage EC2
-      if: steps.ping_check.outputs.pingable == 'false'
+      if: steps.check_ec2_instance_status.outputs.instance_running == 'true' && steps.ping_check.outputs.pingable == 'false'
       env:
         AWS_REGION: ${{ env.REGION }}
         INSTANCE_ID: ${{ env.INSTANCE_ID }}
@@ -54,7 +72,7 @@ jobs:
         echo "Instance restarted."
 
     - name: Get New Public IP
-      if: steps.ping_check.outputs.pingable == 'false'
+      if: steps.check_ec2_instance_status.outputs.instance_running == 'true' && steps.ping_check.outputs.pingable == 'false'
       env:
         AWS_REGION: ${{ env.REGION }}
         INSTANCE_ID: ${{ env.INSTANCE_ID }}
@@ -64,7 +82,7 @@ jobs:
         echo "NEW_IP=$NEW_IP" >> $GITHUB_ENV
 
     - name: Get Cloudflare DNS Record ID
-      if: steps.ping_check.outputs.pingable == 'false'
+      if: steps.check_ec2_instance_status.outputs.instance_running == 'true' && steps.ping_check.outputs.pingable == 'false'
       run: |
         # 使用cURL调用Cloudflare API获取DNS记录ID
         DNS_RECORDS=$(curl -s -X GET "https://api.cloudflare.com/client/v4/zones/${{ env.CF_ZONE_ID }}/dns_records?name=${{ env.DOMAIN }}" \
@@ -80,7 +98,7 @@ jobs:
         fi
 
     - name: Update DNS Record
-      if: steps.ping_check.outputs.pingable == 'false'
+      if: steps.check_ec2_instance_status.outputs.instance_running == 'true' && steps.ping_check.outputs.pingable == 'false'
       run: |
         # 构建cURL请求命令，使用先前获取到的DNS_ID
         UPDATE_CMD=$(echo -n "{\"type\":\"A\",\"name\":\"${{ env.DOMAIN }}\",\"content\":\"$NEW_IP\",\"proxied\":${{ env.PROXIED }}}")
