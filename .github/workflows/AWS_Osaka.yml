@@ -1,11 +1,11 @@
-name: 0 AWS Osaka
+name: AWS Osaka
 on:
-  #schedule:
-  #  - cron: '0 */3 * * *' # 每3小时执行一次
+  schedule:
+    - cron: '0 */3 * * *' # 每3小时执行一次
   workflow_dispatch:
 
 env:
-  INSTANCE_ID: i-01636fd58d539173b
+  INSTANCE_ID: i-0a63113e5ec90c2ff
   REGION: ap-northeast-3
   DOMAIN: 'osaka.onemorething.pp.ua' # 需要查询的DNS名称
   CF_ZONE_ID: 1fa9774064820f53fe1733e37a19f721
