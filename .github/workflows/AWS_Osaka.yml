@@ -5,7 +5,7 @@ on:
   workflow_dispatch:
 
 env:
-  INSTANCE_ID: i-0a63113e5ec90c2ff
+  INSTANCE_ID: i-0698638c23d104951
   REGION: ap-northeast-3
   DOMAIN: 'osaka.onemorething.pp.ua' # 需要查询的DNS名称
   CF_ZONE_ID: 1fa9774064820f53fe1733e37a19f721
