@@ -7,7 +7,7 @@ on:
 env:
   INSTANCE_ID: i-04ce1edba12be7524
   REGION: ap-south-1
-  DOMAIN: 'apsouth1.onemorething.pp.ua' # 需要查询的DNS名称
+  DOMAIN: 'aws.ap-south1.onemorething.pp.ua' # 需要查询的DNS名称
   CF_ZONE_ID: 1fa9774064820f53fe1733e37a19f721
   CF_API_TOKEN: ${{ secrets.CF_API_TOKEN }} # 从GitHub Secrets中获取API Token
   PROXIED: 'false' # 是否开启Cloudflare代理，默认否
