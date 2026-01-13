@@ -1,13 +1,14 @@
-name: AWS CA Healthcheck and EC2 Management
+name: AWS_SEOUL_AKIARQCWB3YVKXLELLQW
 on:
-  #schedule:
-  #  - cron: '0 */2 * * *' # 每2小时执行一次
+  schedule:
+    - cron: '0 */2 * * *' # 每2小时执行一次
   workflow_dispatch:
 
 env:
-  INSTANCE_ID: i-032407fb843e2ee2e
-  REGION: us-west-1
-  DOMAIN: 'aws.ca.onemorething.pp.ua' # 需要查询的DNS名称
+  INSTANCE_ID: i-0346508b1991fa5d2
+  REGION: ap-northeast-2
+  AWS-ACCESS-KEY-ID: AKIARQCWB3YVKXLELLQW
+  DOMAIN: 'aws.northeast2.onemorething.pp.ua' # 需要查询的DNS名称
   CF_ZONE_ID: 1fa9774064820f53fe1733e37a19f721
   CF_API_TOKEN: ${{ secrets.CF_API_TOKEN }} # 从GitHub Secrets中获取API Token
   PROXIED: 'false' # 是否开启Cloudflare代理，默认否
@@ -19,8 +20,8 @@ jobs:
     - name: Configure AWS Credentials
       uses: aws-actions/configure-aws-credentials@v1
       with:
-        aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID_CA }}
-        aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY_CA }}
+        aws-access-key-id: ${{ env.AWS-ACCESS-KEY-ID }}
+        aws-secret-access-key: ${{ secrets.AWS_SECRET_SEOUL_AKIARQCWB3YVKXLELLQW }}
         aws-region: ${{ env.REGION }}
 
     - name: Check Connectivity
