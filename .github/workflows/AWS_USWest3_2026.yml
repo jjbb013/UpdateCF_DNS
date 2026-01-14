@@ -1,7 +1,7 @@
-name: AWS US-West3 Healthcheck and EC2 Management
+name: AWS US-West3 2026
 on:
   schedule:
-    - cron: '0 */2 * * *' # 每3小时执行一次
+    - cron: '0 */3 * * *' # 每3小时执行一次
   workflow_dispatch:
 
 env:
@@ -22,10 +22,10 @@ jobs:
     - name: Check Domain Connectivity
       id: check-connectivity
       run: |
-        API_URL="https://v2.api-m.com/api/tcping?address=${{env.DOMAIN}}&port=${{env.PORT}}"
-        response=$(curl -sL $API_URL)
-        echo ${{ env.DOMAIN }} $response
-        if [[ "$response" == *"200"* ]]; then
+        API_URL="https://cn.apihz.cn/api/wangzhan/ping.php?id=10012112&key=11a27dd28291dc973616eaad85dc6279&host=${{env.DOMAIN}}&type=1"
+        response=$(curl -sL "$API_URL")
+        echo "${{ env.DOMAIN }} $response"
+        if [[ "$response" == *"\"code\": 200"* ]]; then
           echo "Domain ${{ env.DOMAIN }} is reachable."
           echo "REACHABLE=true" >> $GITHUB_ENV
         else
