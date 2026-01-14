@@ -1,12 +1,13 @@
-name: AWS AP SOUTHEAST2 Healthcheck and EC2 Management
+name: +AWS AP SOUTHEAST2 澳大利亚 2026
 on:
-  #schedule:
-  #  - cron: '0 */2 * * *' # 每2小时执行一次
+  schedule:
+    - cron: '0 */4 * * *' # 每4小时执行一次
   workflow_dispatch:
 
 env:
-  INSTANCE_ID: i-0bd2352c70ed538cd
+  INSTANCE_ID: i-0b5f4f84ff637a601
   REGION: ap-southeast-2
+  AWS-ACCESS-KEY-ID: AKIAZGOOVXTA3L6BVRUR
   DOMAIN: 'aws.southeast2.onemorething.pp.ua' # 需要查询的DNS名称
   CF_ZONE_ID: 1fa9774064820f53fe1733e37a19f721
   CF_API_TOKEN: ${{ secrets.CF_API_TOKEN }} # 从GitHub Secrets中获取API Token
@@ -19,17 +20,17 @@ jobs:
     - name: Configure AWS Credentials
       uses: aws-actions/configure-aws-credentials@v1
       with:
-        aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID_SOUTHEAST2 }}
-        aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY_SOUTHEAST2 }}
+        aws-access-key-id: ${{ env.AWS-ACCESS-KEY-ID }}
+        aws-secret-access-key: ${{ secrets.AWS_SECRET_SYDNEY_AKIAZGOOVXTA3L6BVRUR }}
         aws-region: ${{ env.REGION }}
 
     - name: Check Connectivity
       id: ping_check
       run: |
-        API_URL="https://v2.api-m.com/api/tcping?address=${{env.DOMAIN}}&port=1081"
-        response=$(curl -sL $API_URL)
-        echo ${{ env.DOMAIN }} $response
-        if [[ $response == *"200"* ]]; then
+        API_URL="https://cn.apihz.cn/api/wangzhan/ping.php?id=10012112&key=11a27dd28291dc973616eaad85dc6279&host=${{env.DOMAIN}}&type=1"
+        response=$(curl -sL "$API_URL")
+        echo "${{ env.DOMAIN }} $response"
+        if [[ $response == *"\"code\": 200"* ]]; then
           echo "Domain is pingable at $(date)"
           echo "::set-output name=pingable::true"
         else
@@ -41,7 +42,7 @@ jobs:
       if: steps.ping_check.outputs.pingable == 'false'
       env:
         AWS_REGION: ${{ env.REGION }}
-        INSTANCE_ID: ${{ env.INSTANCE_ID }}
+        INSTANCE_ID: ${{env.INSTANCE_ID}}
       run: |
         echo "Stopping EC2 instance..."
         aws ec2 stop-instances --instance-ids $INSTANCE_ID --region $AWS_REGION
