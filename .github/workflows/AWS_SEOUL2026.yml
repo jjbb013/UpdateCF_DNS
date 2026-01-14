@@ -1,4 +1,4 @@
-name: AWS_SEOUL_AKIARQCWB3YVKXLELLQW
+name: +AWS_SEOUL_2026
 on:
   schedule:
     - cron: '0 */4 * * *' # 每4小时执行一次
