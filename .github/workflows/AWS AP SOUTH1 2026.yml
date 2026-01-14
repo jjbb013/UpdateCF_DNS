@@ -1,4 +1,4 @@
-name: +AWS AP SOUTH1 2026
+name: +AWS AP SOUTH1(印度) 2026
 on:
   schedule:
     - cron: '0 */2 * * *' # 每3小时执行一次
