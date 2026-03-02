@@ -1,0 +1,134 @@
+name: AWS Free Tier & Billing Monitor (CLI)
+
+on:
+  schedule:
+    - cron: "0 1 * * *"      # 每天 UTC 01:00（北京时间 09:00）
+  workflow_dispatch:
+
+jobs:
+  monitor:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install jq
+        run: sudo apt-get update && sudo apt-get install -y jq
+
+      - name: Configure credentials for ap-south-1 account
+        env:
+          AWS_ACCESS_KEY_ID_AP_SOUTH_1: ${{ secrets.AWS_ACCESS_KEY_ID_AP_SOUTH_1 }}
+          AWS_SECRET_ACCESS_KEY_AP_SOUTH_1: ${{ secrets.AWS_SECRET_ACCESS_KEY_AP_SOUTH_1 }}
+        run: |
+          mkdir -p ~/.aws
+          cat > ~/.aws/credentials <<EOF
+          [ap-south-1-profile]
+          aws_access_key_id=${AWS_ACCESS_KEY_ID_AP_SOUTH_1}
+          aws_secret_access_key=${AWS_SECRET_ACCESS_KEY_AP_SOUTH_1}
+          EOF
+
+      - name: Run Free Tier & Billing checks (AWS CLI only)
+        env:
+          PROFILE: ap-south-1-profile
+
+          # 你的邮箱（用于在通知中标记）
+          ACCOUNT_EMAIL: "ar.row1959808weiqing@gmail.com"
+
+          # ====== Bark 方案一：完整 URL（推荐你这次使用）======
+          # 把你的完整 URL 放到 Secrets：BARK_FULL_URL=https://api.day.app/oZaeqGLJzRLSxW7dJqeACn/
+          BARK_FULL_URL: ${{ secrets.BARK_FULL_URL }}
+
+          # ====== Bark 方案二：传统方式（endpoint + key）======
+          BARK_KEY: ${{ secrets.BARK_KEY }}
+          BARK_ENDPOINT: ${{ secrets.BARK_ENDPOINT || 'https://api.day.app' }}
+        run: |
+          set -e
+
+          FREE_TIER_PCT_THRESHOLD=95
+          BILLING_THRESHOLD_USD=0.5
+
+          START_DATE="$(date +%Y-%m-01)"
+          END_DATE="$(date +%Y-%m-%d)"   # CE End 为开区间，用今天即可
+
+          # 兼容两种 Bark 配置：
+          # 优先使用 BARK_FULL_URL，其次使用 BARK_ENDPOINT + BARK_KEY
+          bark_push () {
+            TITLE="$1"
+            BODY="$2"
+            GROUP="aws-cli-monitor"
+
+            if [ -n "$BARK_FULL_URL" ]; then
+              BASE="${BARK_FULL_URL%/}" # 去尾部斜杠
+              URL="${BASE}/$(echo -n "$TITLE" | jq -s -R -r @uri)/$(echo -n "$BODY" | jq -s -R -r @uri)?group=${GROUP}"
+              curl -s "$URL" >/dev/null || true
+              return
+            fi
+
+            if [ -n "$BARK_KEY" ]; then
+              BASE="${BARK_ENDPOINT:-https://api.day.app}"
+              URL="${BASE}/${BARK_KEY}/$(echo -n "$TITLE" | jq -s -R -r @uri)/$(echo -n "$BODY" | jq -s -R -r @uri)?group=${GROUP}"
+              curl -s "$URL" >/dev/null || true
+              return
+            fi
+
+            echo "[WARN] No Bark configuration found; skip push."
+          }
+
+          echo "=== [${ACCOUNT_EMAIL}] Step 1: Free Tier usage ==="
+          FT_JSON=$(AWS_PROFILE="$PROFILE" aws freetier get-free-tier-usage --region us-east-1 2>/dev/null || true)
+          if [ -z "$FT_JSON" ]; then
+            bark_push "AWS 预警 (ap-south-1 | ${ACCOUNT_EMAIL})" "Free Tier 查询失败：无法获取数据"
+          fi
+
+          ALERT_FT=""
+          if [ -n "$FT_JSON" ]; then
+            echo "$FT_JSON" | jq -c '.freeTierUsages[]' | while read item; do
+              LIMIT=$(echo "$item" | jq -r '.limit')
+              [ "$LIMIT" = "0" -o "$LIMIT" = "0.0" -o -z "$LIMIT" ] && continue
+
+              ACTUAL=$(echo "$item" | jq -r '.actualUsageAmount')
+              FORECAST=$(echo "$item" | jq -r '.forecastedUsageAmount')
+              SERVICE=$(echo "$item" | jq -r '.service')
+              USAGE_TYPE=$(echo "$item" | jq -r '.usageType')
+              UNIT=$(echo "$item" | jq -r '.unit')
+
+              ACTUAL_PCT=$(echo "$ACTUAL $LIMIT" | awk '{printf("%.2f", ($1/$2)*100)}')
+              FORECAST_PCT=$(echo "$FORECAST $LIMIT" | awk '{printf("%.2f", ($1/$2)*100)}')
+
+              # 任一 >= 95% 就算告警
+              if (( $(echo "$ACTUAL_PCT >= $FREE_TIER_PCT_THRESHOLD" | bc -l) )) || \
+                 (( $(echo "$FORECAST_PCT >= $FREE_TIER_PCT_THRESHOLD" | bc -l) )); then
+                echo "- ${SERVICE} | ${USAGE_TYPE} (${UNIT}) : 实际 ${ACTUAL_PCT}% / 预测 ${FORECAST_PCT}%"
+              fi
+            done > /tmp/ft_breaches.txt || true
+
+            if [ -s /tmp/ft_breaches.txt ]; then
+              ALERT_FT=$(cat /tmp/ft_breaches.txt)
+            fi
+          fi
+
+          echo "=== [${ACCOUNT_EMAIL}] Step 2: Monthly billing (CE) ==="
+          CE_JSON=$(AWS_PROFILE="$PROFILE" aws ce get-cost-and-usage \
+            --region us-east-1 \
+            --time-period Start="$START_DATE",End="$END_DATE" \
+            --granularity MONTHLY \
+            --metrics UnblendedCost 2>/dev/null || true)
+
+          COST_USD="0.00"
+          if [ -n "$CE_JSON" ]; then
+            COST_USD=$(echo "$CE_JSON" | jq -r '.ResultsByTime[0].Total.UnblendedCost.Amount' | awk '{printf("%.2f",$1)}')
+          fi
+
+          ALERT_COST=""
+          if (( $(echo "$COST_USD > $BILLING_THRESHOLD_USD" | bc -l) )); then
+            ALERT_COST="本月账单金额 \$${COST_USD}（阈值 \$${BILLING_THRESHOLD_USD}）"
+          fi
+
+          echo "=== [${ACCOUNT_EMAIL}] Step 3: Push if breached ==="
+          if [ -n "$ALERT_FT" ] || [ -n "$ALERT_COST" ]; then
+            BODY="账号邮箱：${ACCOUNT_EMAIL}\n\nFreeTier:\n${ALERT_FT}\n\nBilling:\n${ALERT_COST}"
+            bark_push "AWS 预警 (ap-south-1 | ${ACCOUNT_EMAIL})" "$BODY"
+          else
+            echo "✅ [${ACCOUNT_EMAIL}] 正常：Free Tier < ${FREE_TIER_PCT_THRESHOLD}% 且 MTD \$${COST_USD} ≤ \$${BILLING_THRESHOLD_USD}"
+          fi
