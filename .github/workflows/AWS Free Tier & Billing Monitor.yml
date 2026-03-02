@@ -18,69 +18,96 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y jq bc
 
-      - name: Prepare AWS credentials for all 4 accounts (no-quote EOF)
+      - name: Prepare AWS credentials & config for all 4 accounts (write to $RUNNER_TEMP/aws)
         env:
-          # === Account 1: Seoul / ap-northeast-2（Key ID 按你要求明文）===
+          # === Account 1: Seoul / ap-northeast-2（Key ID 明文 + Secret in Secret）===
           ACCESS_KEY_ID_SEOUL: "AKIARQCWB3YVKXLELLQW"
           AWS_SECRET_SEOUL_AKIARQCWB3YVKXLELLQW: ${{ secrets.AWS_SECRET_SEOUL_AKIARQCWB3YVKXLELLQW }}
 
-          # === Account 2: Mumbai / ap-south-1（Secrets）===
+          # === Account 2: Mumbai / ap-south-1（Key/Secret in Secrets）===
           AWS_ACCESS_KEY_ID_AP_SOUTH_1: ${{ secrets.AWS_ACCESS_KEY_ID_AP_SOUTH_1 }}
           AWS_SECRET_ACCESS_KEY_AP_SOUTH_1: ${{ secrets.AWS_SECRET_ACCESS_KEY_AP_SOUTH_1 }}
 
-          # === Account 3: us-west-2（W3, Secrets）===
+          # === Account 3: us-west-2（W3, Key/Secret in Secrets）===
           AWS_ACCESS_KEY_ID_W3: ${{ secrets.AWS_ACCESS_KEY_ID_W3 }}
           AWS_SECRET_ACCESS_KEY_W3: ${{ secrets.AWS_SECRET_ACCESS_KEY_W3 }}
 
-          # === Account 4: Sydney / ap-southeast-2（Key ID 明文 + Secret）===
+          # === Account 4: Sydney / ap-southeast-2（Key ID 明文 + Secret in Secret）===
           ACCESS_KEY_ID_SYDNEY: "AKIAZGOOVXTA3L6BVRUR"
           AWS_SECRET_SYDNEY_AKIAZGOOVXTA3L6BVRUR: ${{ secrets.AWS_SECRET_SYDNEY_AKIAZGOOVXTA3L6BVRUR }}
         run: |
           set -e
-          mkdir -p ~/.aws
-          : > ~/.aws/credentials
+          mkdir -p "$RUNNER_TEMP/aws"
+          CRED="$RUNNER_TEMP/aws/credentials"
+          CONF="$RUNNER_TEMP/aws/config"
+          : > "$CRED"
+          : > "$CONF"
 
-          # --- Profile 1 (Seoul / ap-northeast-2) ---
-          cat >> ~/.aws/credentials <<EOF
+          # --- credentials ---
+          cat >> "$CRED" <<EOF
           [acc-seoul]
           aws_access_key_id=${ACCESS_KEY_ID_SEOUL}
           aws_secret_access_key=${AWS_SECRET_SEOUL_AKIARQCWB3YVKXLELLQW}
-          EOF
-
-          # --- Profile 2 (Mumbai / ap-south-1) ---
-          cat >> ~/.aws/credentials <<EOF
+          
           [acc-mumbai]
           aws_access_key_id=${AWS_ACCESS_KEY_ID_AP_SOUTH_1}
           aws_secret_access_key=${AWS_SECRET_ACCESS_KEY_AP_SOUTH_1}
-          EOF
-
-          # --- Profile 3 (us-west-2) ---
-          cat >> ~/.aws/credentials <<EOF
+          
           [acc-us-west-2]
           aws_access_key_id=${AWS_ACCESS_KEY_ID_W3}
           aws_secret_access_key=${AWS_SECRET_ACCESS_KEY_W3}
-          EOF
-
-          # --- Profile 4 (Sydney / ap-southeast-2) ---
-          cat >> ~/.aws/credentials <<EOF
+          
           [acc-sydney]
           aws_access_key_id=${ACCESS_KEY_ID_SYDNEY}
           aws_secret_access_key=${AWS_SECRET_SYDNEY_AKIAZGOOVXTA3L6BVRUR}
           EOF
 
-          echo "==== ~/.aws/credentials (masked) ===="
-          sed -E 's/(aws_access_key_id=).+/\1****/; s/(aws_secret_access_key=).+/\1****/' ~/.aws/credentials
+          # --- config（设置默认输出和端点区域 us-east-1；Free Tier & CE 的官方端点在该区） ---
+          cat >> "$CONF" <<'EOF'
+          [default]
+          output=json
+          region=us-east-1
+          
+          [profile acc-seoul]
+          output=json
+          region=us-east-1
+          
+          [profile acc-mumbai]
+          output=json
+          region=us-east-1
+          
+          [profile acc-us-west-2]
+          output=json
+          region=us-east-1
+          
+          [profile acc-sydney]
+          output=json
+          region=us-east-1
+          EOF
+
+          echo "==== Credentials path: $CRED; Config path: $CONF ===="
+          echo "---- credentials (masked preview) ----"
+          sed -E 's/(aws_access_key_id=).+/\1****/; s/(aws_secret_access_key=).+/\1****/' "$CRED"
+          echo "---- config ----"
+          cat "$CONF"
 
       - name: Run Free Tier (actual only) & Billing checks (AWS CLI, verbose)
         env:
+          # 强制 CLI 读取我们刚才写入的文件
+          AWS_SHARED_CREDENTIALS_FILE: ${{ runner.temp }}/aws/credentials
+          AWS_CONFIG_FILE: ${{ runner.temp }}/aws/config
+
           # ===== Bark（优先使用完整 URL）=====
-          BARK_FULL_URL: ${{ secrets.BARK_FULL_URL }}
+          BARK_FULL_URL: ${{ secrets.BARK_FULL_URL }}         # e.g. https://api.day.app/your_key/
+          # 备用（如不使用完整 URL）：
+          BARK_KEY: ${{ secrets.BARK_KEY }}
+          BARK_ENDPOINT: ${{ secrets.BARK_ENDPOINT || 'https://api.day.app' }}
 
           # ===== 阈值 =====
           FREE_TIER_PCT_THRESHOLD: "95"   # 仅比较“实际使用率”
           BILLING_THRESHOLD_USD: "0.5"    # 当月 MTD > $0.5 告警
 
-          # ===== 4 个账户的展示信息（邮箱 & 主用区）=====
+          # ===== 4 个账户的展示信息（邮箱 & 主用区，仅显示用）=====
           EMAIL_SEOUL: "a.rrow1959808weiqing@gmail.com"
           HOME_SEOUL: "ap-northeast-2"
 
@@ -94,27 +121,28 @@ jobs:
           HOME_SYDNEY: "ap-southeast-2"
         run: |
           set -e
+          echo "AWS_SHARED_CREDENTIALS_FILE=$AWS_SHARED_CREDENTIALS_FILE"
+          echo "AWS_CONFIG_FILE=$AWS_CONFIG_FILE"
+          echo "aws configure list-profiles:"
+          aws configure list-profiles || true
 
           # ===== 账户清单（4 个不同账户）=====
           ACCOUNTS='
           [
-            { "name": "acc-seoul",   "profile": "acc-seoul",   "email": "'"${EMAIL_SEOUL}"'",   "home_region": "'"${HOME_SEOUL}"'",   "partition": "aws" },
-            { "name": "acc-mumbai",  "profile": "acc-mumbai",  "email": "'"${EMAIL_MUMBAI}"'",  "home_region": "'"${HOME_MUMBAI}"'",  "partition": "aws" },
+            { "name": "acc-seoul",    "profile": "acc-seoul",    "email": "'"${EMAIL_SEOUL}"'",    "home_region": "'"${HOME_SEOUL}"'",    "partition": "aws" },
+            { "name": "acc-mumbai",   "profile": "acc-mumbai",   "email": "'"${EMAIL_MUMBAI}"'",   "home_region": "'"${HOME_MUMBAI}"'",   "partition": "aws" },
             { "name": "acc-us-west-2","profile": "acc-us-west-2","email": "'"${EMAIL_US_WEST_2}"'","home_region": "'"${HOME_US_WEST_2}"'","partition": "aws" },
-            { "name": "acc-sydney",  "profile": "acc-sydney",  "email": "'"${EMAIL_SYDNEY}"'",  "home_region": "'"${HOME_SYDNEY}"'",  "partition": "aws" }
+            { "name": "acc-sydney",   "profile": "acc-sydney",   "email": "'"${EMAIL_SYDNEY}"'",   "home_region": "'"${HOME_SYDNEY}"'",   "partition": "aws" }
           ]'
 
           # ===== 时间区间 =====
-          # 本月 MTD（参与预警）
           START_DATE="$(date +%Y-%m-01)"
           END_DATE="$(date +%Y-%m-%d)"     # CE End 为开区间
-
-          # 上个月整月（仅控制台打印，不参与预警）
           CURR_FIRST="$(date +%Y-%m-01)"
           PREV_FIRST="$(date -d "${CURR_FIRST} -1 month" +%Y-%m-01)"
-          PREV_END="${CURR_FIRST}"         # 开区间：覆盖上月整月
+          PREV_END="${CURR_FIRST}"         # 覆盖上月整月
 
-          # ===== Bark 推送（支持完整 URL 或 endpoint+key）=====
+          # ===== Bark 推送（完整 URL 或 endpoint+key）=====
           bark_push () {
             TITLE="$1"
             BODY="$2"
@@ -134,7 +162,6 @@ jobs:
             echo "[WARN] Bark not configured; skip push."
           }
 
-          # ===== 控制台美化 =====
           line() { printf '%*s\n' "${COLUMNS:-80}" '' | tr ' ' -; }
           section() { echo; line; echo "$1"; line; }
 
@@ -145,7 +172,7 @@ jobs:
             HOME=$(echo "$acc" | jq -r '.home_region')
             PARTITION=$(echo "$acc" | jq -r '.partition')
 
-            # Free Tier / CE API 固定端点区域（全球分区：us-east-1；如中国分区则用 cn-north-1）
+            # Free Tier / CE API 的官方端点都在 us-east-1（全球分区），中国区例外
             if [ "$PARTITION" = "aws-cn" ]; then
               FT_REGION="cn-north-1"
               CE_REGION="cn-north-1"
@@ -156,24 +183,23 @@ jobs:
 
             section "ACCOUNT: ${NAME}  |  EMAIL: ${EMAIL}  |  HOME: ${HOME}  |  PARTITION: ${PARTITION}  |  PROFILE: ${PROFILE}"
 
-            echo "[0] Env/STS check"
+            echo "[0] STS check (with --profile)"
             echo "aws --version: $(aws --version 2>&1)"
-            echo "Using AWS_PROFILE=$PROFILE"
-            if ! AWS_PROFILE="$PROFILE" aws sts get-caller-identity --output json; then
-              echo "❌ STS 失败（凭据无效或未正确写入 ~/.aws/credentials）"
-              bark_push "AWS 预警 (${NAME} | ${EMAIL})" "STS 失败：请检查 GitHub Secrets 与 credentials 写入。"
+            if ! aws sts get-caller-identity --profile "$PROFILE" --output json; then
+              echo "❌ STS 失败（profile 未找到或凭据无效），请检查上一 step 的 profiles 列表与 Secrets。"
+              bark_push "AWS 预警 (${NAME} | ${EMAIL})" "STS 失败：profile 不存在或凭据无效。"
               continue
             fi
 
-            # ========= Step 1: Free Tier（只看实际用量） =========
-            echo; echo "[1] Free Tier (actual only; endpoint region: ${FT_REGION})"
+            # ========= Step 1: Free Tier（仅实际用量）=========
+            echo; echo "[1] Free Tier (actual-only; endpoint region: ${FT_REGION})"
             set +e
-            FT_JSON=$(AWS_PROFILE="$PROFILE" aws freetier get-free-tier-usage --region "${FT_REGION}" 2> /tmp/ft_err_${NAME}.log)
+            FT_JSON=$(aws freetier get-free-tier-usage --profile "$PROFILE" --region "$FT_REGION" 2> /tmp/ft_err_${NAME}.log)
             RET_FT=$?
             set -e
 
             if [ $RET_FT -ne 0 ] || [ -z "$FT_JSON" ]; then
-              echo "❌ Free Tier 失败/为空。错误日志（前 120 行）："
+              echo "❌ Free Tier 失败/为空。错误（前 120 行）："
               sed -n '1,120p' /tmp/ft_err_${NAME}.log || true
               bark_push "AWS 预警 (${NAME} | ${EMAIL})" "Free Tier 查询失败：$(sed -n '1,3p' /tmp/ft_err_${NAME}.log | tr '\n' ' ')"
             else
@@ -181,7 +207,7 @@ jobs:
               echo "---- 原始（前 50 条预览） ----"
               echo "$FT_JSON" | jq '.freeTierUsages | .[0:50]'
 
-              echo "---- 逐条计算（仅实际用量） & 达阈列表（≥ ${FREE_TIER_PCT_THRESHOLD}%） ----"
+              echo "---- 逐条计算（仅实际） & 达阈列表（≥ ${FREE_TIER_PCT_THRESHOLD}%） ----"
               > /tmp/ft_breaches_${NAME}.txt
               echo "$FT_JSON" | jq -c '.freeTierUsages[]' | while read item; do
                 LIMIT=$(echo "$item" | jq -r '.limit')
@@ -206,7 +232,7 @@ jobs:
               done
 
               if [ -s /tmp/ft_breaches_${NAME}.txt ]; then
-                echo "⚠️ 达阈条目（仅实际用量）："
+                echo "⚠️ 达阈条目（仅实际）："
                 cat /tmp/ft_breaches_${NAME}.txt
               else
                 echo "✅ 免费额度“实际使用率”均 < ${FREE_TIER_PCT_THRESHOLD}%"
@@ -215,13 +241,14 @@ jobs:
 
             # ========= Step 2: Billing (CE) =========
             echo; echo "[2] Billing (Cost Explorer) 端点：${CE_REGION}"
-            echo "   · 本月 MTD：${START_DATE} ~ ${END_DATE}（End 开区间，用于预警）"
+            echo "   · 本月 MTD：${START_DATE} ~ ${END_DATE}（End 开区间，参与预警）"
             echo "   · 上个月整月：${PREV_FIRST} ~ ${PREV_END}（End 开区间，仅打印）"
 
             # 2.1 本月 MTD 总金额（参与预警）
             set +e
-            CE_TOTAL=$(AWS_PROFILE="$PROFILE" aws ce get-cost-and-usage \
-              --region "${CE_REGION}" \
+            CE_TOTAL=$(aws ce get-cost-and-usage \
+              --profile "$PROFILE" \
+              --region "$CE_REGION" \
               --time-period Start="${START_DATE}",End="${END_DATE}" \
               --granularity MONTHLY \
               --metrics UnblendedCost 2> /tmp/ce_total_err_${NAME}.log)
@@ -230,17 +257,18 @@ jobs:
 
             COST_USD="0.00"
             if [ $RET_CE_TOTAL -ne 0 ] || [ -z "$CE_TOTAL" ]; then
-              echo "❌ CE 本月 MTD 失败/为空。错误日志（前 120 行）："
+              echo "❌ CE 本月 MTD 失败/为空。错误（前 120 行）："
               sed -n '1,120p' /tmp/ce_total_err_${NAME}.log || true
             else
               COST_USD=$(echo "$CE_TOTAL" | jq -r '.ResultsByTime[0].Total.UnblendedCost.Amount' | awk '{printf("%.2f",$1)}')
               echo "✅ 本月 MTD 总金额（USD）：$${COST_USD}"
             fi
 
-            # 2.2 上个月整月总金额（仅控制台打印，不参与预警）
+            # 2.2 上个月整月总金额（仅打印）
             set +e
-            CE_PREV=$(AWS_PROFILE="$PROFILE" aws ce get-cost-and-usage \
-              --region "${CE_REGION}" \
+            CE_PREV=$(aws ce get-cost-and-usage \
+              --profile "$PROFILE" \
+              --region "$CE_REGION" \
               --time-period Start="${PREV_FIRST}",End="${PREV_END}" \
               --granularity MONTHLY \
               --metrics UnblendedCost 2> /tmp/ce_prev_err_${NAME}.log)
@@ -248,17 +276,18 @@ jobs:
             set -e
 
             if [ $RET_CE_PREV -ne 0 ] || [ -z "$CE_PREV" ]; then
-              echo "❌ CE 上个月整月金额查询失败/为空。错误日志（前 120 行）："
+              echo "❌ CE 上个月整月金额失败/为空。错误（前 120 行）："
               sed -n '1,120p' /tmp/ce_prev_err_${NAME}.log || true
             else
               PREV_USD=$(echo "$CE_PREV" | jq -r '.ResultsByTime[0].Total.UnblendedCost.Amount' | awk '{printf("%.2f",$1)}')
               echo "🧾 上个月整月总金额（USD）：$${PREV_USD}"
             fi
 
-            # （可选）本月按服务拆分（仅打印，便于核验）
+            # （可选）本月按服务拆分（仅打印）
             set +e
-            CE_BY_SVC=$(AWS_PROFILE="$PROFILE" aws ce get-cost-and-usage \
-              --region "${CE_REGION}" \
+            CE_BY_SVC=$(aws ce get-cost-and-usage \
+              --profile "$PROFILE" \
+              --region "$CE_REGION" \
               --time-period Start="${START_DATE}",End="${END_DATE}" \
               --granularity MONTHLY \
               --metrics UnblendedCost \
@@ -267,7 +296,7 @@ jobs:
             set -e
 
             if [ $RET_CE_SVC -ne 0 ] || [ -z "$CE_BY_SVC" ]; then
-              echo "❌ CE 按服务拆分失败/为空。错误日志（前 120 行）："
+              echo "❌ CE 按服务拆分失败/为空。错误（前 120 行）："
               sed -n '1,120p' /tmp/ce_svc_err_${NAME}.log || true
             else
               echo "---- 本月按服务拆分（前 30） ----"
@@ -304,15 +333,3 @@ jobs:
 
             echo; echo "[完成] ${NAME} (${EMAIL})"
           done
-
-      # （可选）把原始 JSON/错误日志打包为构件，便于下载核对
-      # - name: Upload artifacts (optional)
-      #   if: always()
-      #   uses: actions/upload-artifact@v4
-      #   with:
-      #     name: aws-monitor-raw-json-and-logs
-      #     path: |
-      #       /tmp/ft_err_*.log
-      #       /tmp/ce_total_err_*.log
-      #       /tmp/ce_prev_err_*.log
-      #       /tmp/ce_svc_err_*.log
