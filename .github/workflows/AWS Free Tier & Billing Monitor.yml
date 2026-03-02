@@ -13,12 +13,12 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Install jq & bc (for JSON/float)
+      - name: Install jq & bc (for JSON and float ops)
         run: |
           sudo apt-get update
           sudo apt-get install -y jq bc
 
-      - name: Prepare AWS credentials for all accounts (FIX: no-quote EOF to expand env)
+      - name: Prepare AWS credentials for all accounts (fixed, no-quote EOF)
         env:
           # === Account 1: ap-south-1 ===
           AWS_ACCESS_KEY_ID_AP_SOUTH_1: ${{ secrets.AWS_ACCESS_KEY_ID_AP_SOUTH_1 }}
@@ -28,38 +28,43 @@ jobs:
           AWS_ACCESS_KEY_ID_W3: ${{ secrets.AWS_ACCESS_KEY_ID_W3 }}
           AWS_SECRET_ACCESS_KEY_W3: ${{ secrets.AWS_SECRET_ACCESS_KEY_W3 }}
         run: |
+          set -e
           mkdir -p ~/.aws
           : > ~/.aws/credentials
 
           # Profile for Account 1 (ap-south-1)
           cat >> ~/.aws/credentials <<EOF
-            [acc-ap-south-1]
-            aws_access_key_id=${AWS_ACCESS_KEY_ID_AP_SOUTH_1}
-            aws_secret_access_key=${AWS_SECRET_ACCESS_KEY_AP_SOUTH_1}
-            EOF
+          [acc-ap-south-1]
+          aws_access_key_id=${AWS_ACCESS_KEY_ID_AP_SOUTH_1}
+          aws_secret_access_key=${AWS_SECRET_ACCESS_KEY_AP_SOUTH_1}
+          EOF
 
           # Profile for Account 2 (us-west-2)
           cat >> ~/.aws/credentials <<EOF
-            [acc-us-west-2]
-            aws_access_key_id=${AWS_ACCESS_KEY_ID_W3}
-            aws_secret_access_key=${AWS_SECRET_ACCESS_KEY_W3}
-            EOF
+          [acc-us-west-2]
+          aws_access_key_id=${AWS_ACCESS_KEY_ID_W3}
+          aws_secret_access_key=${AWS_SECRET_ACCESS_KEY_W3}
+          EOF
 
           echo "==== ~/.aws/credentials (masked) ===="
           sed -E 's/(aws_access_key_id=).+/\1****/; s/(aws_secret_access_key=).+/\1****/' ~/.aws/credentials
 
       - name: Run Free Tier & Billing checks (AWS CLI only, verbose to console)
         env:
-          # ===== Bark（建议优先使用完整 URL）=====
-          BARK_FULL_URL: ${{ secrets.BARK_FULL_URL }}   
+          # ===== Bark（优先使用完整 URL）=====
+          # BARK_FULL_URL 例： https://api.day.app/oZaeqGLJzRLSxW7dJqeACn/
+          BARK_FULL_URL: ${{ secrets.BARK_FULL_URL }}
+          # 备用（若不使用完整 URL）：
+          BARK_KEY: ${{ secrets.BARK_KEY }}
+          BARK_ENDPOINT: ${{ secrets.BARK_ENDPOINT || 'https://api.day.app' }}
 
           # ===== 阈值 =====
-          FREE_TIER_PCT_THRESHOLD: "95"
-          BILLING_THRESHOLD_USD: "0.5"
+          FREE_TIER_PCT_THRESHOLD: "95"   # 免费额度：实际或预测 ≥95% 告警
+          BILLING_THRESHOLD_USD: "0.5"    # 账单 MTD > $0.5 告警
         run: |
           set -e
 
-          # ===== 账户数组（可继续扩展）=====
+          # ===== 账户清单（可继续追加更多账户）=====
           ACCOUNTS='
           [
             {
@@ -78,14 +83,15 @@ jobs:
             }
           ]'
 
+          # ===== 时间区间：本月 MTD（CE 的 End 为开区间，用今天）=====
           START_DATE="$(date +%Y-%m-01)"
-          END_DATE="$(date +%Y-%m-%d)"  # CE End 为开区间
+          END_DATE="$(date +%Y-%m-%d)"
 
+          # ===== Bark 推送（支持完整 URL 或 endpoint+key）=====
           bark_push () {
             TITLE="$1"
             BODY="$2"
             GROUP="aws-cli-monitor"
-
             if [ -n "$BARK_FULL_URL" ]; then
               BASE="${BARK_FULL_URL%/}"
               URL="${BASE}/$(echo -n "$TITLE" | jq -s -R -r @uri)/$(echo -n "$BODY" | jq -s -R -r @uri)?group=${GROUP}"
@@ -101,6 +107,7 @@ jobs:
             echo "[WARN] Bark not configured; skip push."
           }
 
+          # ===== 控制台美化 =====
           line() { printf '%*s\n' "${COLUMNS:-80}" '' | tr ' ' -; }
           section() { echo; line; echo "$1"; line; }
 
@@ -110,22 +117,22 @@ jobs:
             EMAIL=$(echo "$acc" | jq -r '.email')
             PARTITION=$(echo "$acc" | jq -r '.partition')
 
-            # Free Tier / CE 使用的端点区域
+            # Free Tier / CE API 端点区域（全球分区统一 us-east-1；中国分区为 cn-north-1）
             if [ "$PARTITION" = "aws-cn" ]; then
               FT_REGION="cn-north-1"
               CE_REGION="cn-north-1"
             else
-              FT_REGION="us-east-1"   # Free Tier endpoint
-              CE_REGION="us-east-1"   # Cost Explorer endpoint
+              FT_REGION="us-east-1"
+              CE_REGION="us-east-1"
             fi
 
             section "ACCOUNT: ${NAME}  |  EMAIL: ${EMAIL}  |  PARTITION: ${PARTITION}  |  PROFILE: ${PROFILE}"
-            echo "[0] Env check"
+
+            echo "[0] Env/STS check"
             echo "aws --version: $(aws --version 2>&1)"
             echo "Using AWS_PROFILE=$PROFILE"
-            echo "Attempting STS get-caller-identity..."
             if ! AWS_PROFILE="$PROFILE" aws sts get-caller-identity --output json; then
-              echo "❌ STS 调用失败（凭据无效或未展开）。请先修复。"
+              echo "❌ STS 失败（凭据无效或未正确写入 ~/.aws/credentials）"
               bark_push "AWS 预警 (${NAME} | ${EMAIL})" "STS 失败：请检查 GitHub Secrets 与 credentials 写入。"
               continue
             fi
@@ -138,14 +145,15 @@ jobs:
             set -e
 
             if [ $RET_FT -ne 0 ] || [ -z "$FT_JSON" ]; then
-              echo "❌ Free Tier 失败/为空。错误日志："
+              echo "❌ Free Tier 失败/为空。错误日志（前 120 行）："
               sed -n '1,120p' /tmp/ft_err_${NAME}.log || true
               bark_push "AWS 预警 (${NAME} | ${EMAIL})" "Free Tier 查询失败：$(sed -n '1,3p' /tmp/ft_err_${NAME}.log | tr '\n' ' ')"
             else
               echo "✅ Free Tier 成功"
-              echo "---- Free Tier 原始（最多展示前 50 条） ----"
+              echo "---- Free Tier 原始（前 50 条预览） ----"
               echo "$FT_JSON" | jq '.freeTierUsages | .[0:50]'
-              echo "---- Free Tier 计算（达到阈值的条目） ----"
+
+              echo "---- Free Tier 逐条计算 & 达阈列表（≥ ${FREE_TIER_PCT_THRESHOLD}%） ----"
               > /tmp/ft_breaches_${NAME}.txt
               echo "$FT_JSON" | jq -c '.freeTierUsages[]' | while read item; do
                 LIMIT=$(echo "$item" | jq -r '.limit')
@@ -171,6 +179,7 @@ jobs:
                   echo "- ${SERVICE} | ${USAGE} (${UNIT}) @ ${REGION} : 实际 ${ACTUAL_PCT}% / 预测 ${FORECAST_PCT}% | 限额 ${LIMIT} | ${FT_TYPE}" >> /tmp/ft_breaches_${NAME}.txt
                 fi
               done
+
               if [ -s /tmp/ft_breaches_${NAME}.txt ]; then
                 echo "⚠️ 达阈条目："
                 cat /tmp/ft_breaches_${NAME}.txt
@@ -200,14 +209,16 @@ jobs:
 
             COST_USD="0.00"
             if [ $RET_CE_TOTAL -ne 0 ] || [ -z "$CE_TOTAL" ]; then
-              echo "❌ CE 总金额失败/为空。错误日志："; sed -n '1,120p' /tmp/ce_total_err_${NAME}.log || true
+              echo "❌ CE 总金额失败/为空。错误日志（前 120 行）："
+              sed -n '1,120p' /tmp/ce_total_err_${NAME}.log || true
             else
               COST_USD=$(echo "$CE_TOTAL" | jq -r '.ResultsByTime[0].Total.UnblendedCost.Amount' | awk '{printf("%.2f",$1)}')
               echo "✅ MTD 总金额（USD）：$${COST_USD}"
             fi
 
             if [ $RET_CE_SVC -ne 0 ] || [ -z "$CE_BY_SVC" ]; then
-              echo "❌ CE 按服务拆分失败/为空。错误日志："; sed -n '1,120p' /tmp/ce_svc_err_${NAME}.log || true
+              echo "❌ CE 按服务拆分失败/为空。错误日志（前 120 行）："
+              sed -n '1,120p' /tmp/ce_svc_err_${NAME}.log || true
             else
               echo "---- 按服务拆分（前 30） ----"
               echo "$CE_BY_SVC" | \
@@ -243,3 +254,14 @@ jobs:
 
             echo; echo "[完成] ${NAME} (${EMAIL})"
           done
+
+      # （可选）把原始 JSON/错误日志打包为构件，便于下载核对
+      # - name: Upload artifacts (optional)
+      #   if: always()
+      #   uses: actions/upload-artifact@v4
+      #   with:
+      #     name: aws-monitor-raw-json-and-logs
+      #     path: |
+      #       /tmp/ft_err_*.log
+      #       /tmp/ce_total_err_*.log
+      #       /tmp/ce_svc_err_*.log
