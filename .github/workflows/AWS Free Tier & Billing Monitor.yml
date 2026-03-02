@@ -1,4 +1,4 @@
-name: AWS Free Tier & Billing Monitor (CLI, Multi-Account, Verbose)
+name: AWS Free Tier & Billing Monitor (CLI, Multi-Account, Actual-Only)
 
 on:
   schedule:
@@ -49,22 +49,18 @@ jobs:
           echo "==== ~/.aws/credentials (masked) ===="
           sed -E 's/(aws_access_key_id=).+/\1****/; s/(aws_secret_access_key=).+/\1****/' ~/.aws/credentials
 
-      - name: Run Free Tier & Billing checks (AWS CLI only, verbose to console)
+      - name: Run Free Tier (actual only) & Billing checks (AWS CLI, verbose)
         env:
           # ===== Bark（优先使用完整 URL）=====
-          # BARK_FULL_URL 例： https://api.day.app/oZaeqGLJzRLSxW7dJqeACn/
           BARK_FULL_URL: ${{ secrets.BARK_FULL_URL }}
-          # 备用（若不使用完整 URL）：
-          BARK_KEY: ${{ secrets.BARK_KEY }}
-          BARK_ENDPOINT: ${{ secrets.BARK_ENDPOINT || 'https://api.day.app' }}
 
           # ===== 阈值 =====
-          FREE_TIER_PCT_THRESHOLD: "95"   # 免费额度：实际或预测 ≥95% 告警
-          BILLING_THRESHOLD_USD: "0.5"    # 账单 MTD > $0.5 告警
+          FREE_TIER_PCT_THRESHOLD: "95"   # 仅比较“实际使用率”
+          BILLING_THRESHOLD_USD: "0.5"    # 当月 MTD > $0.5 告警
         run: |
           set -e
 
-          # ===== 账户清单（可继续追加更多账户）=====
+          # ===== 账户清单（可继续扩展）=====
           ACCOUNTS='
           [
             {
@@ -137,8 +133,8 @@ jobs:
               continue
             fi
 
-            # ========= Step 1: Free Tier =========
-            echo; echo "[1] Query Free Tier (endpoint region: ${FT_REGION})"
+            # ========= Step 1: Free Tier（只看实际用量） =========
+            echo; echo "[1] Query Free Tier (actual only; endpoint region: ${FT_REGION})"
             set +e
             FT_JSON=$(AWS_PROFILE="$PROFILE" aws freetier get-free-tier-usage --region "${FT_REGION}" 2> /tmp/ft_err_${NAME}.log)
             RET_FT=$?
@@ -153,7 +149,7 @@ jobs:
               echo "---- Free Tier 原始（前 50 条预览） ----"
               echo "$FT_JSON" | jq '.freeTierUsages | .[0:50]'
 
-              echo "---- Free Tier 逐条计算 & 达阈列表（≥ ${FREE_TIER_PCT_THRESHOLD}%） ----"
+              echo "---- Free Tier 逐条计算（仅实际用量） & 达阈列表（≥ ${FREE_TIER_PCT_THRESHOLD}%） ----"
               > /tmp/ft_breaches_${NAME}.txt
               echo "$FT_JSON" | jq -c '.freeTierUsages[]' | while read item; do
                 LIMIT=$(echo "$item" | jq -r '.limit')
@@ -166,25 +162,22 @@ jobs:
                 REGION=$(echo "$item"  | jq -r '.region')
                 FT_TYPE=$(echo "$item" | jq -r '.freeTierType')
                 ACTUAL=$(echo "$item"  | jq -r '.actualUsageAmount')
-                FORECAST=$(echo "$item"| jq -r '.forecastedUsageAmount')
 
-                ACTUAL_PCT=$(echo "$ACTUAL $LIMIT"   | awk '{printf("%.2f", ($1/$2)*100)}')
-                FORECAST_PCT=$(echo "$FORECAST $LIMIT"| awk '{printf("%.2f", ($1/$2)*100)}')
+                ACTUAL_PCT=$(echo "$ACTUAL $LIMIT" | awk '{printf("%.2f", ($1/$2)*100)}')
 
-                printf "• %-26s | %-26s | %-12s | Unit=%-6s | Region=%-9s | Type=%-12s | Actual=%-10s | Forecast=%-10s | Limit=%-10s | A%%=%-6s | F%%=%-6s\n" \
-                  "$SERVICE" "$USAGE" "$OP" "$UNIT" "$REGION" "$FT_TYPE" "$ACTUAL" "$FORECAST" "$LIMIT" "$ACTUAL_PCT" "$FORECAST_PCT"
+                printf "• %-26s | %-26s | %-12s | Unit=%-6s | Region=%-9s | Type=%-12s | Actual=%-10s | Limit=%-10s | A%%=%-6s\n" \
+                  "$SERVICE" "$USAGE" "$OP" "$UNIT" "$REGION" "$FT_TYPE" "$ACTUAL" "$LIMIT" "$ACTUAL_PCT"
 
-                if (( $(echo "$ACTUAL_PCT >= $FREE_TIER_PCT_THRESHOLD" | bc -l) )) || \
-                   (( $(echo "$FORECAST_PCT >= $FREE_TIER_PCT_THRESHOLD" | bc -l) )); then
-                  echo "- ${SERVICE} | ${USAGE} (${UNIT}) @ ${REGION} : 实际 ${ACTUAL_PCT}% / 预测 ${FORECAST_PCT}% | 限额 ${LIMIT} | ${FT_TYPE}" >> /tmp/ft_breaches_${NAME}.txt
+                if (( $(echo "$ACTUAL_PCT >= $FREE_TIER_PCT_THRESHOLD" | bc -l) )); then
+                  echo "- ${SERVICE} | ${USAGE} (${UNIT}) @ ${REGION} : 实际 ${ACTUAL_PCT}% | 限额 ${LIMIT} | ${FT_TYPE}" >> /tmp/ft_breaches_${NAME}.txt
                 fi
               done
 
               if [ -s /tmp/ft_breaches_${NAME}.txt ]; then
-                echo "⚠️ 达阈条目："
+                echo "⚠️ 达阈条目（仅实际用量）："
                 cat /tmp/ft_breaches_${NAME}.txt
               else
-                echo "✅ 免费额度使用率均 < ${FREE_TIER_PCT_THRESHOLD}%"
+                echo "✅ 免费额度“实际使用率”均 < ${FREE_TIER_PCT_THRESHOLD}%"
               fi
             fi
 
@@ -233,7 +226,7 @@ jobs:
             fi
 
             # ========= Step 3: Bark & 总结 =========
-            echo; echo "[3] 告警判断与推送"
+            echo; echo "[3] 告警判断与推送（仅实际用量）"
             ALERT_FT_TEXT=""
             if [ -s /tmp/ft_breaches_${NAME}.txt ]; then ALERT_FT_TEXT="$(cat /tmp/ft_breaches_${NAME}.txt)"; fi
 
@@ -244,12 +237,12 @@ jobs:
 
             if [ -n "$ALERT_FT_TEXT" ] || [ -n "$ALERT_COST_TEXT" ]; then
               echo "⚠️ 存在告警："
-              [ -n "$ALERT_FT_TEXT" ] && { echo "  - Free Tier 达阈："; echo "$ALERT_FT_TEXT"; }
+              [ -n "$ALERT_FT_TEXT" ] && { echo "  - Free Tier（实际）达阈："; echo "$ALERT_FT_TEXT"; }
               [ -n "$ALERT_COST_TEXT" ] && { echo "  - 账单金额：$ALERT_COST_TEXT"; }
-              BODY="账号邮箱：${EMAIL}\n\nFreeTier:\n${ALERT_FT_TEXT}\n\nBilling:\n${ALERT_COST_TEXT}"
+              BODY="账号邮箱：${EMAIL}\n\nFreeTier(实际):\n${ALERT_FT_TEXT}\n\nBilling:\n${ALERT_COST_TEXT}"
               bark_push "AWS 预警 (${NAME} | ${EMAIL})" "$BODY"
             else
-              echo "✅ 正常：Free Tier < ${FREE_TIER_PCT_THRESHOLD}% 且 MTD \$${COST_USD} ≤ \$${BILLING_THRESHOLD_USD}"
+              echo "✅ 正常：Free Tier(实际) < ${FREE_TIER_PCT_THRESHOLD}% 且 MTD \$${COST_USD} ≤ \$${BILLING_THRESHOLD_USD}"
             fi
 
             echo; echo "[完成] ${NAME} (${EMAIL})"
