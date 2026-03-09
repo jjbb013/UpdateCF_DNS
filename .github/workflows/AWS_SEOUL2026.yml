@@ -1,7 +1,7 @@
 name: +AWS_SEOUL_2026
 on:
-  schedule:
-    - cron: '0 */4 * * *' # 每4小时执行一次
+  #schedule:
+  #  - cron: '0 */4 * * *' # 每4小时执行一次
   workflow_dispatch:
 
 env:
