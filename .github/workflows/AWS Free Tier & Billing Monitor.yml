@@ -1,8 +1,8 @@
 name: AWS Free Tier & Billing Monitor (CLI, 4 Accounts, Actual-only + Last Month Cost)
 
 on:
-  schedule:
-    - cron: '0 1 * * *'      # 每天 UTC 01:00（北京时间 09:00）
+  #schedule:
+  #  - cron: '0 1 * * *'      # 每天 UTC 01:00（北京时间 09:00）
   workflow_dispatch:
 
 jobs:
