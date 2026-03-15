@@ -24,8 +24,8 @@ jobs:
       - name: Prepare AWS credentials for all 4 accounts
         env:
           # --- Account 1: Seoul / ap-northeast-2 ---
-          ACCESS_KEY_ID_SEOUL: "AKIARQCWB3YVKXLELLQW"
-          AWS_SECRET_SEOUL_AKIARQCWB3YVKXLELLQW: ${{ secrets.AWS_SECRET_SEOUL_AKIARQCWB3YVKXLELLQW }}
+          # ACCESS_KEY_ID_SEOUL: "AKIARQCWB3YVKXLELLQW"
+          # AWS_SECRET_SEOUL_AKIARQCWB3YVKXLELLQW: ${{ secrets.AWS_SECRET_SEOUL_AKIARQCWB3YVKXLELLQW }}
 
           # --- Account 2: Mumbai / ap-south-1 ---
           AWS_ACCESS_KEY_ID_AP_SOUTH_1: ${{ secrets.AWS_ACCESS_KEY_ID_AP_SOUTH_1 }}
