@@ -1,0 +1,229 @@
+name: AWS 免费用量查询
+
+on:
+  schedule:
+    - cron: '15 0 * * *'      
+  workflow_dispatch:
+
+jobs:
+  monitor:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install jq & bc
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y jq bc
+
+      ########################################################
+      #              凭据写入（修正 profile 丢失）              #
+      ########################################################
+      - name: Prepare AWS credentials for all 4 accounts
+        env:
+          # --- Account 1: Seoul / ap-northeast-2 ---
+          ACCESS_KEY_ID_SEOUL: "AKIARQCWB3YVKXLELLQW"
+          AWS_SECRET_SEOUL_AKIARQCWB3YVKXLELLQW: ${{ secrets.AWS_SECRET_SEOUL_AKIARQCWB3YVKXLELLQW }}
+
+          # --- Account 2: Mumbai / ap-south-1 ---
+          AWS_ACCESS_KEY_ID_AP_SOUTH_1: ${{ secrets.AWS_ACCESS_KEY_ID_AP_SOUTH_1 }}
+          AWS_SECRET_ACCESS_KEY_AP_SOUTH_1: ${{ secrets.AWS_SECRET_ACCESS_KEY_AP_SOUTH_1 }}
+
+          # --- Account 3: us-west-2 ---
+          AWS_ACCESS_KEY_ID_W3: ${{ secrets.AWS_ACCESS_KEY_ID_W3 }}
+          AWS_SECRET_ACCESS_KEY_W3: ${{ secrets.AWS_SECRET_ACCESS_KEY_W3 }}
+
+          # --- Account 4: Sydney / ap-southeast-2 ---
+          ACCESS_KEY_ID_SYDNEY: "AKIAZGOOVXTA3L6BVRUR"
+          AWS_SECRET_SYDNEY_AKIAZGOOVXTA3L6BVRUR: ${{ secrets.AWS_SECRET_SYDNEY_AKIAZGOOVXTA3L6BVRUR }}
+        run: |
+          set -e
+          mkdir -p "$RUNNER_TEMP/aws"
+          CRED="$RUNNER_TEMP/aws/credentials"
+          CONF="$RUNNER_TEMP/aws/config"
+
+          : > "$CRED"
+          : > "$CONF"
+
+          # credentials (4 accounts)
+          cat >> "$CRED" <<EOF
+          [acc-seoul]
+          aws_access_key_id=${ACCESS_KEY_ID_SEOUL}
+          aws_secret_access_key=${AWS_SECRET_SEOUL_AKIARQCWB3YVKXLELLQW}
+          
+          [acc-mumbai]
+          aws_access_key_id=${AWS_ACCESS_KEY_ID_AP_SOUTH_1}
+          aws_secret_access_key=${AWS_SECRET_ACCESS_KEY_AP_SOUTH_1}
+          
+          [acc-us-west-2]
+          aws_access_key_id=${AWS_ACCESS_KEY_ID_W3}
+          aws_secret_access_key=${AWS_SECRET_ACCESS_KEY_W3}
+          
+          [acc-sydney]
+          aws_access_key_id=${ACCESS_KEY_ID_SYDNEY}
+          aws_secret_access_key=${AWS_SECRET_SYDNEY_AKIAZGOOVXTA3L6BVRUR}
+          EOF
+
+          # config (统一 region=us-east-1 以访问 Free Tier API)
+          cat >> "$CONF" <<EOF
+          [default]
+          output=json
+          region=us-east-1
+          
+          [profile acc-seoul]
+          output=json
+          region=us-east-1
+          
+          [profile acc-mumbai]
+          output=json
+          region=us-east-1
+          
+          [profile acc-us-west-2]
+          output=json
+          region=us-east-1
+          
+          [profile acc-sydney]
+          output=json
+          region=us-east-1
+          EOF
+
+          echo "===== Credentials (masked) ====="
+          sed -E 's/(aws_access_key_id=).+/\1****/; s/(aws_secret_access_key=).+/\1****/' "$CRED"
+
+          echo "===== Config ====="
+          cat "$CONF"
+
+      ########################################################
+      #              主任务：仅检查 Free Tier                  #
+      ########################################################
+      - name: Run Free Tier checks
+        env:
+          AWS_SHARED_CREDENTIALS_FILE: ${{ runner.temp }}/aws/credentials
+          AWS_CONFIG_FILE: ${{ runner.temp }}/aws/config
+
+          # ---- Bark 推送 ----
+          BARK_FULL_URL: ${{ secrets.BARK_FULL_URL }}
+          BARK_KEY: ${{ secrets.BARK_KEY }}
+          BARK_ENDPOINT: ${{ secrets.BARK_ENDPOINT || 'https://api.day.app' }}
+
+          # ---- 阈值 ----
+          FREE_TIER_PCT_THRESHOLD: "95"
+
+          # ---- 展示邮箱（4 个账户）----
+          EMAIL_SEOUL: "a.rrow1959808weiqing@gmail.com"
+          EMAIL_MUMBAI: "arro.w1959808weiqing@gmail.com"
+          EMAIL_US_WEST_2: "jjbb.013@gmail.com"
+          EMAIL_SYDNEY: "ar.row1959808weiqing@gmail.com"
+
+          HOME_SEOUL: "ap-northeast-2"
+          HOME_MUMBAI: "ap-south-1"
+          HOME_US_WEST_2: "us-west-2"
+          HOME_SYDNEY: "ap-southeast-2"
+        run: |
+          set -e
+
+          echo "AWS_SHARED_CREDENTIALS_FILE=$AWS_SHARED_CREDENTIALS_FILE"
+          echo "AWS_CONFIG_FILE=$AWS_CONFIG_FILE"
+          echo "Profiles loaded:"
+          aws configure list-profiles
+
+          ACCOUNTS='
+          [
+            { "name": "acc-seoul",    "profile": "acc-seoul",    "email": "'"${EMAIL_SEOUL}"'",    "home": "'"${HOME_SEOUL}"'" },
+            { "name": "acc-mumbai",   "profile": "acc-mumbai",   "email": "'"${EMAIL_MUMBAI}"'",   "home": "'"${HOME_MUMBAI}"'" },
+            { "name": "acc-us-west-2","profile": "acc-us-west-2","email": "'"${EMAIL_US_WEST_2}"'","home": "'"${HOME_US_WEST_2}"'" },
+            { "name": "acc-sydney",   "profile": "acc-sydney",   "email": "'"${EMAIL_SYDNEY}"'",   "home": "'"${HOME_SYDNEY}"'" }
+          ]'
+
+          bark_push () {
+            TITLE="$1"
+            BODY="$2"
+            if [ -n "$BARK_FULL_URL" ]; then
+              BASE="${BARK_FULL_URL%/}"
+              curl -s "${BASE}/$(echo -n "$TITLE" | jq -s -R -r @uri)/$(echo -n "$BODY" | jq -s -R -r @uri)" >/dev/null
+            elif [ -n "$BARK_KEY" ]; then
+              BASE="${BARK_ENDPOINT:-https://api.day.app}"
+              curl -s "${BASE}/${BARK_KEY}/$(echo -n "$TITLE" | jq -s -R -r @uri)/$(echo -n "$BODY" | jq -s -R -r @uri)" >/dev/null
+            fi
+          }
+
+          line() { printf '%*s\n' "${COLUMNS:-80}" '' | tr ' ' -; }
+          section() { echo; line; echo "$1"; line; }
+
+          echo "$ACCOUNTS" | jq -c '.[]' | while read acc; do
+            
+            NAME=$(echo "$acc" | jq -r '.name')
+            PROFILE=$(echo "$acc" | jq -r '.profile')
+            EMAIL=$(echo "$acc" | jq -r '.email')
+            HOME=$(echo "$acc" | jq -r '.home')
+
+            FT_REGION="us-east-1"
+
+            section "ACCOUNT: $NAME | EMAIL: $EMAIL | HOME: $HOME | PROFILE: $PROFILE"
+
+            echo "[0] STS check"
+            if ! aws sts get-caller-identity --profile "$PROFILE" --output json; then
+              echo "❌ STS failed"
+              bark_push "AWS预警($NAME)" "STS 失败：请检查凭据或 Secrets"
+              continue
+            fi
+
+            ##############################
+            #   Step 1: Free Tier (actual)
+            ##############################
+            echo "[1] Free Tier (actual-only)"
+            set +e
+            FT_JSON=$(aws freetier get-free-tier-usage --profile "$PROFILE" --region "$FT_REGION" 2>/tmp/ft_err_${NAME}.log)
+            RET_FT=$?
+            set -e
+
+            if [ $RET_FT -ne 0 ] || [ -z "$FT_JSON" ]; then
+              echo "❌ Free Tier 查询失败"
+              sed -n '1,20p' /tmp/ft_err_${NAME}.log
+              continue
+            fi
+
+            echo "---- 原始前 20 条 ----"
+            echo "$FT_JSON" | jq '.freeTierUsages | .[0:20]'
+
+            > /tmp/ft_breach_${NAME}.txt
+
+            echo "$FT_JSON" | jq -c '.freeTierUsages[]' | while read item; do
+              LIMIT=$(echo "$item" | jq -r '.limit')
+              [ "$LIMIT" = "0" ] && continue
+
+              SERVICE=$(echo "$item" | jq -r '.service')
+              USAGE_TYPE=$(echo "$item" | jq -r '.usageType')
+              UNIT=$(echo "$item" | jq -r '.unit')
+              REGION=$(echo "$item" | jq -r '.region')
+              ACTUAL=$(echo "$item" | jq -r '.actualUsageAmount')
+
+              ACTUAL_PCT=$(echo "$ACTUAL $LIMIT" | awk '{printf("%.2f", ($1/$2)*100)}')
+
+              printf "• %-20s | %-20s | Actual=%s %s | Limit=%s | %5.2f%%\n" \
+                "$SERVICE" "$USAGE_TYPE" "$ACTUAL" "$UNIT" "$LIMIT" "$ACTUAL_PCT"
+
+              if (( $(echo "$ACTUAL_PCT >= $FREE_TIER_PCT_THRESHOLD" | bc -l) )); then
+                echo "- $SERVICE | $USAGE_TYPE : 实际 ${ACTUAL_PCT}% (限额 $LIMIT)" >> /tmp/ft_breach_${NAME}.txt
+              fi
+            done
+
+            ##############################
+            #   Step 2: 判断是否需要推送
+            ##############################
+            ALERT_FT=""
+            if [ -s /tmp/ft_breach_${NAME}.txt ]; then
+              ALERT_FT=$(cat /tmp/ft_breach_${NAME}.txt)
+            fi
+
+            if [ -n "$ALERT_FT" ]; then
+              echo "⚠️ 触发告警"
+              MSG="账号：${EMAIL}\n\nFreeTier超限：\n${ALERT_FT}"
+              bark_push "AWS预警($NAME)" "$MSG"
+            else
+              echo "✅ 正常：无告警条件触发"
+            fi
+
+          done
