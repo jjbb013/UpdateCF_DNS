@@ -8,7 +8,7 @@ env:
   INSTANCE_ID: i-05303e630246a0d89
   REGION: ap-southeast-1
   AWS-ACCESS-KEY-ID: AKIAXSJOZG6SZORVUBLZ
-  DOMAIN: 'kkk.onemorething.pp.ua' # 需要查询的DNS名称
+  DOMAIN: 'aws.sg.onemorething.pp.ua' # 需要查询的DNS名称
   CF_ZONE_ID: 1fa9774064820f53fe1733e37a19f721
   CF_API_TOKEN: ${{ secrets.CF_API_TOKEN }} # 从GitHub Secrets中获取API Token
   PROXIED: 'false' # 是否开启Cloudflare代理，默认否
