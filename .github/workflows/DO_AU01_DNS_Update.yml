@@ -1,0 +1,127 @@
+name: DO AU01 DNS Update
+
+on:
+  schedule:
+    - cron: '0 */6 * * *' # 每6小时检查一次
+  workflow_dispatch:
+
+env:
+  DOMAIN: 'jjs.onemorething.pp.ua'
+  CF_ZONE_ID: ${{ secrets.CF_ZONE_ID }}
+  CF_API_TOKEN: ${{ secrets.CF_API_TOKEN }}
+  PROXIED: 'false'
+
+jobs:
+  check-and-update-dns:
+    runs-on: ubuntu-latest
+    steps:
+    - name: Check Current DNS IP
+      id: dns_check
+      run: |
+        CURRENT_DNS_IP=$(dig +short ${{ env.DOMAIN }} | head -n1)
+        echo "Current DNS IP: $CURRENT_DNS_IP"
+        echo "CURRENT_DNS_IP=$CURRENT_DNS_IP" >> $GITHUB_ENV
+
+    - name: Get Cloudflare DNS Record Info
+      id: get_dns_record
+      run: |
+        DNS_RECORDS=$(curl -s -X GET "https://api.cloudflare.com/client/v4/zones/${{ env.CF_ZONE_ID }}/dns_records?name=${{ env.DOMAIN }}" \
+          -H "Authorization: Bearer ${{ env.CF_API_TOKEN }}" \
+          -H "Content-Type: application/json")
+        
+        echo "DNS Records Response:"
+        echo "$DNS_RECORDS" | jq .
+        
+        DNS_ID=$(echo "$DNS_RECORDS" | jq -r '.result[] | select(.name == "${{ env.DOMAIN }}") | .id')
+        DNS_IP=$(echo "$DNS_RECORDS" | jq -r '.result[] | select(.name == "${{ env.DOMAIN }}") | .content')
+        
+        if [ -z "$DNS_ID" ] || [ "$DNS_ID" = "null" ]; then
+          echo "No DNS record found for ${{ env.DOMAIN }}"
+          exit 1
+        fi
+        
+        echo "DNS Record ID: $DNS_ID"
+        echo "DNS Record IP: $DNS_IP"
+        echo "DNS_ID=$DNS_ID" >> $GITHUB_ENV
+        echo "DNS_IP=$DNS_IP" >> $GITHUB_ENV
+
+    - name: Check Server Connectivity
+      id: connectivity_check
+      run: |
+        API_URL="https://v2.api-m.com/api/tcping?address=${{ env.DOMAIN }}&port=443"
+        response=$(curl -sL "$API_URL")
+        echo "Connectivity check: $response"
+        
+        if [[ "$response" == *"200"* ]] || [[ "$response" == *"success"* ]]; then
+          echo "Server is reachable"
+          echo "NEED_UPDATE=false" >> $GITHUB_ENV
+        else
+          echo "Server may be unreachable"
+          echo "NEED_UPDATE=true" >> $GITHUB_ENV
+        fi
+
+    - name: Get Droplet IP from DigitalOcean
+      if: env.NEED_UPDATE == 'true'
+      env:
+        DO_TOKEN: ${{ secrets.DO_API_TOKEN }}
+      run: |
+        DROPLET_INFO=$(curl -s -X GET "https://api.digitalocean.com/v2/droplets" \
+          -H "Authorization: Bearer $DO_TOKEN")
+        
+        NEW_IP=$(echo "$DROPLET_INFO" | jq -r '.droplets[] | select(.name == "au01") | .networks.v4[] | select(.type == "public") | .ip_address')
+        
+        if [ -z "$NEW_IP" ] || [ "$NEW_IP" = "null" ]; then
+          echo "Could not get droplet IP from API, using known IP"
+          NEW_IP="134.199.164.133"
+        fi
+        
+        echo "Droplet IP: $NEW_IP"
+        echo "NEW_IP=$NEW_IP" >> $GITHUB_ENV
+        
+        if [ "$NEW_IP" = "$DNS_IP" ]; then
+          echo "IP unchanged, no update needed"
+          echo "NEED_UPDATE=false" >> $GITHUB_ENV
+        else
+          echo "IP changed from $DNS_IP to $NEW_IP"
+          echo "NEED_UPDATE=true" >> $GITHUB_ENV
+        fi
+
+    - name: Update Cloudflare DNS Record
+      if: env.NEED_UPDATE == 'true'
+      run: |
+        UPDATE_DATA=$(jq -n \
+          --arg type "A" \
+          --arg name "${{ env.DOMAIN }}" \
+          --arg content "$NEW_IP" \
+          --argjson proxied false \
+          '{type: $type, name: $name, content: $content, proxied: $proxied}')
+        
+        echo "Updating DNS with data: $UPDATE_DATA"
+        
+        RESPONSE=$(curl -s -X PUT "https://api.cloudflare.com/client/v4/zones/${{ env.CF_ZONE_ID }}/dns_records/${{ env.DNS_ID }}" \
+          -H "Authorization: Bearer ${{ env.CF_API_TOKEN }}" \
+          -H "Content-Type: application/json" \
+          --data "$UPDATE_DATA")
+        
+        echo "Update response:"
+        echo "$RESPONSE" | jq .
+        
+        SUCCESS=$(echo "$RESPONSE" | jq -r '.success')
+        if [ "$SUCCESS" = "true" ]; then
+          echo "✅ DNS updated successfully to $NEW_IP"
+        else
+          echo "❌ DNS update failed"
+          exit 1
+        fi
+
+    - name: Send Notification
+      if: env.NEED_UPDATE == 'true'
+      env:
+        BARK_URL: ${{ secrets.BARK_FULL_URL }}
+      run: |
+        if [ -n "$BARK_URL" ]; then
+          curl -s "$BARK_URL" \
+            --data-urlencode "title=DO AU01 DNS Updated" \
+            --data-urlencode "body=IP changed to $NEW_IP" \
+            > /dev/null
+        fi
