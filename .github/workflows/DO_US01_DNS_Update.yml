@@ -1,8 +1,6 @@
 name: DO US01 DNS Update
 
 on:
-  schedule:
-    - cron: '0 */6 * * *' # 每6小时检查一次
   workflow_dispatch:
 
 env:
