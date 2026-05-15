@@ -43,45 +43,46 @@ jobs:
         echo "DNS_ID=$DNS_ID" >> $GITHUB_ENV
         echo "DNS_IP=$DNS_IP" >> $GITHUB_ENV
 
-    - name: Check Server Connectivity
-      id: connectivity_check
-      run: |
-        API_URL="https://v2.api-m.com/api/tcping?address=${{ env.DOMAIN }}&port=443"
-        response=$(curl -sL "$API_URL")
-        echo "Connectivity check: $response"
-        
-        if [[ "$response" == *"200"* ]] || [[ "$response" == *"success"* ]]; then
-          echo "Server is reachable"
-          echo "NEED_UPDATE=false" >> $GITHUB_ENV
-        else
-          echo "Server may be unreachable"
-          echo "NEED_UPDATE=true" >> $GITHUB_ENV
-        fi
-
     - name: Get Droplet IP from DigitalOcean
-      if: env.NEED_UPDATE == 'true'
+      id: get_droplet_ip
       env:
         DO_TOKEN: ${{ secrets.DO_API_TOKEN }}
       run: |
         DROPLET_INFO=$(curl -s -X GET "https://api.digitalocean.com/v2/droplets" \
-          -H "Authorization: Bearer $DO_TOKEN")
+          -H "Authorization: Bearer $DO_TOKEN" \
+          -H "Content-Type: application/json")
+        
+        echo "Droplet Info:"
+        echo "$DROPLET_INFO" | jq '.droplets[] | {name: .name, id: .id, region: .region.slug}'
         
         NEW_IP=$(echo "$DROPLET_INFO" | jq -r '.droplets[] | select(.name == "au01") | .networks.v4[] | select(.type == "public") | .ip_address')
         
         if [ -z "$NEW_IP" ] || [ "$NEW_IP" = "null" ]; then
-          echo "Could not get droplet IP from API, using known IP"
-          NEW_IP="134.199.164.133"
+          echo "❌ Could not get droplet IP from API"
+          exit 1
         fi
         
         echo "Droplet IP: $NEW_IP"
         echo "NEW_IP=$NEW_IP" >> $GITHUB_ENV
-        
-        if [ "$NEW_IP" = "$DNS_IP" ]; then
-          echo "IP unchanged, no update needed"
+
+    - name: Check if DNS needs update
+      id: check_update
+      run: |
+        # 比较 DNS IP 和 DO IP
+        if [ "$DNS_IP" = "$NEW_IP" ]; then
+          echo "✅ DNS IP ($DNS_IP) matches Droplet IP ($NEW_IP), no update needed"
           echo "NEED_UPDATE=false" >> $GITHUB_ENV
         else
-          echo "IP changed from $DNS_IP to $NEW_IP"
+          echo "⚠️ DNS IP mismatch: DNS=$DNS_IP, Droplet=$NEW_IP"
           echo "NEED_UPDATE=true" >> $GITHUB_ENV
+        fi
+        
+        # 同时检查服务器连通性作为辅助判断
+        echo "Checking server connectivity..."
+        if timeout 5 bash -c "</dev/tcp/$NEW_IP/443" 2>/dev/null; then
+          echo "✅ New IP ($NEW_IP) port 443 is reachable"
+        else
+          echo "⚠️ New IP ($NEW_IP) port 443 not reachable (may be normal for Shadowsocks)"
         fi
 
     - name: Update Cloudflare DNS Record
@@ -109,6 +110,7 @@ jobs:
           echo "✅ DNS updated successfully to $NEW_IP"
         else
           echo "❌ DNS update failed"
+          echo "$RESPONSE" | jq '.errors'
           exit 1
         fi
 
@@ -120,6 +122,18 @@ jobs:
         if [ -n "$BARK_URL" ]; then
           curl -s "$BARK_URL" \
             --data-urlencode "title=DO AU01 DNS Updated" \
-            --data-urlencode "body=IP changed to $NEW_IP" \
+            --data-urlencode "body=IP changed from $DNS_IP to $NEW_IP" \
             > /dev/null
+          echo "Notification sent"
+        else
+          echo "No BARK_URL configured, skipping notification"
         fi
+
+    - name: Summary
+      run: |
+        echo "========================================"
+        echo "Domain: ${{ env.DOMAIN }}"
+        echo "Old DNS IP: $DNS_IP"
+        echo "New Droplet IP: $NEW_IP"
+        echo "Update needed: $NEED_UPDATE"
+        echo "========================================"
