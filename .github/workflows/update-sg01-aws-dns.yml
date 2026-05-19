@@ -1,0 +1,32 @@
+name: Update SG01 DNS to AWS
+
+on:
+  workflow_dispatch:
+
+jobs:
+  update-dns:
+    runs-on: ubuntu-latest
+    steps:
+    - name: Update Cloudflare DNS to AWS IP
+      run: |
+        # Get DNS record ID
+        DNS_RECORDS=$(curl -s -X GET "https://api.cloudflare.com/client/v4/zones/${{ secrets.CF_ZONE_ID }}/dns_records?name=kkk.onemorething.pp.ua"           -H "Authorization: Bearer ${{ secrets.CF_API_TOKEN }}"           -H "Content-Type: application/json")
+        
+        DNS_ID=$(echo "$DNS_RECORDS" | jq -r '.result[] | select(.name == "kkk.onemorething.pp.ua") | .id')
+        
+        # Update to AWS IP
+        NEW_IP="13.215.250.247"
+        
+        UPDATE_DATA=$(jq -n           --arg type "A"           --arg name "kkk.onemorething.pp.ua"           --arg content "$NEW_IP"           --argjson proxied false           '{type: $type, name: $name, content: $content, proxied: $proxied}')
+        
+        RESPONSE=$(curl -s -X PUT "https://api.cloudflare.com/client/v4/zones/${{ secrets.CF_ZONE_ID }}/dns_records/$DNS_ID"           -H "Authorization: Bearer ${{ secrets.CF_API_TOKEN }}"           -H "Content-Type: application/json"           --data "$UPDATE_DATA")
+        
+        echo "$RESPONSE" | jq .
+        
+        SUCCESS=$(echo "$RESPONSE" | jq -r '.success')
+        if [ "$SUCCESS" = "true" ]; then
+          echo "✅ DNS updated successfully to $NEW_IP"
+        else
+          echo "❌ DNS update failed"
+          exit 1
+        fi
