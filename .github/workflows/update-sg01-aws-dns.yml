@@ -1,4 +1,4 @@
-name: Update SG01 DNS to AWS - Debug
+name: Update SG01 DNS to AWS - Fixed
 
 on:
   workflow_dispatch:
@@ -7,24 +7,41 @@ jobs:
   update-dns:
     runs-on: ubuntu-latest
     steps:
-    - name: Check current DNS
-      run: |
-        echo "=== Current DNS ==="
-        dig +short kkk.onemorething.pp.ua
-        
     - name: Get Cloudflare DNS Record
+      id: get_dns
       run: |
         echo "=== Getting DNS Record ==="
+        
+        # Try with API Token format first
         DNS_RECORDS=$(curl -s -X GET "https://api.cloudflare.com/client/v4/zones/${{ secrets.CF_ZONE_ID }}/dns_records?name=kkk.onemorething.pp.ua"           -H "Authorization: Bearer ${{ secrets.CF_API_TOKEN }}"           -H "Content-Type: application/json")
         
-        echo "Response:"
+        echo "DNS Records Response:"
         echo "$DNS_RECORDS" | jq .
         
-        DNS_ID=$(echo "$DNS_RECORDS" | jq -r '.result[] | select(.name == "kkk.onemorething.pp.ua") | .id')
-        DNS_IP=$(echo "$DNS_RECORDS" | jq -r '.result[] | select(.name == "kkk.onemorething.pp.ua") | .content')
+        # Check if successful
+        SUCCESS=$(echo "$DNS_RECORDS" | jq -r '.success')
+        if [ "$SUCCESS" != "true" ]; then
+          echo "❌ Failed to get DNS records with Bearer token"
+          echo "Trying with X-Auth-Key format..."
+          
+          # Try alternative authentication
+          DNS_RECORDS=$(curl -s -X GET "https://api.cloudflare.com/client/v4/zones/${{ secrets.CF_ZONE_ID }}/dns_records?name=kkk.onemorething.pp.ua"             -H "X-Auth-Key: ${{ secrets.CF_API_TOKEN }}"             -H "X-Auth-Email: ${{ secrets.CF_EMAIL || 'admin@example.com' }}"             -H "Content-Type: application/json")
+          
+          echo "Alternative auth response:"
+          echo "$DNS_RECORDS" | jq .
+        fi
+        
+        DNS_ID=$(echo "$DNS_RECORDS" | jq -r '.result[]? | select(.name == "kkk.onemorething.pp.ua") | .id')
+        DNS_IP=$(echo "$DNS_RECORDS" | jq -r '.result[]? | select(.name == "kkk.onemorething.pp.ua") | .content')
         
         echo "DNS ID: $DNS_ID"
         echo "Current DNS IP: $DNS_IP"
+        
+        if [ -z "$DNS_ID" ] || [ "$DNS_ID" = "null" ]; then
+          echo "❌ Could not find DNS record ID"
+          exit 1
+        fi
+        
         echo "dns_id=$DNS_ID" >> $GITHUB_OUTPUT
         echo "dns_ip=$DNS_IP" >> $GITHUB_OUTPUT
         
@@ -40,13 +57,33 @@ jobs:
         
         echo "Update data: $UPDATE_DATA"
         
+        # Try with Bearer token
         RESPONSE=$(curl -s -X PUT "https://api.cloudflare.com/client/v4/zones/${{ secrets.CF_ZONE_ID }}/dns_records/$DNS_ID"           -H "Authorization: Bearer ${{ secrets.CF_API_TOKEN }}"           -H "Content-Type: application/json"           --data "$UPDATE_DATA")
         
         echo "Update Response:"
         echo "$RESPONSE" | jq .
         
+        SUCCESS=$(echo "$RESPONSE" | jq -r '.success')
+        if [ "$SUCCESS" != "true" ]; then
+          echo "Bearer token failed, trying X-Auth-Key..."
+          
+          RESPONSE=$(curl -s -X PUT "https://api.cloudflare.com/client/v4/zones/${{ secrets.CF_ZONE_ID }}/dns_records/$DNS_ID"             -H "X-Auth-Key: ${{ secrets.CF_API_TOKEN }}"             -H "X-Auth-Email: ${{ secrets.CF_EMAIL || 'admin@example.com' }}"             -H "Content-Type: application/json"             --data "$UPDATE_DATA")
+          
+          echo "Alternative auth response:"
+          echo "$RESPONSE" | jq .
+        fi
+        
+        SUCCESS=$(echo "$RESPONSE" | jq -r '.success')
+        if [ "$SUCCESS" = "true" ]; then
+          echo "✅ DNS updated successfully to $NEW_IP"
+        else
+          echo "❌ DNS update failed"
+          echo "$RESPONSE"
+          exit 1
+        fi
+        
     - name: Verify DNS Update
       run: |
         echo "=== Verifying DNS ==="
-        sleep 10
+        sleep 15
         dig +short kkk.onemorething.pp.ua
