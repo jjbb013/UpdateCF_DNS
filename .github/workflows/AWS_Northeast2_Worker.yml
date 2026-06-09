@@ -5,7 +5,7 @@ on:
   workflow_dispatch:
 
 env:
-  INSTANCE_ID: i-05303e630246a0d89
+  INSTANCE_ID: i-0ac0d068671893973
   REGION: ap-southeast-1
   AWS-ACCESS-KEY-ID: AKIAXSJOZG6SZUBLZ
   DOMAIN: 'aws.northeast2.onemorething.pp.ua' # 需要查询的DNS名称
