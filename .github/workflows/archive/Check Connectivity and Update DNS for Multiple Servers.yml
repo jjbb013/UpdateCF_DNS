@@ -1,0 +1,37 @@
+name: Check Connectivity and Update DNS
+
+on:
+  #schedule:
+  #  - cron: '0 */2 * * *' # 每2小时运行一次
+  workflow_dispatch:
+
+jobs:
+  check_and_update:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Load Configuration
+        id: load_config
+        run: |
+          CONFIG=$(cat https://github.com/jjbb013/UpdateCF_DNS/blob/038da0fe699b4cc1db015f3d6ae858d373cd48a0/config.yaml)
+          echo "$CONFIG" > config.json
+
+      - name: Process Servers
+        run: |
+          import json
+          config = json.load(open("config.json"))
+          for server in config['servers']:
+            print(f"Checking connectivity for {server['name']}...")
+            DOMAIN = server['domain']
+            PORT = server['port']
+            
+            # Place the connection and DNS updating logic here
+
+            # Example check:
+            response = subprocess.run(["curl", "-s", "-L", f"https://v2.api-m.com/api/tcping?address={DOMAIN}&port={PORT}"], capture_output=True, text=True)
+            
+            if "msg" in response and "请求成功" in response:
+                print(f"{DOMAIN} is reachable.")
+            else:
+                print(f"{DOMAIN} is unreachable.")
+                
+            # 继续执行其他步骤...
