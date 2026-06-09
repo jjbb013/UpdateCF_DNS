@@ -1,0 +1,23 @@
+name: Check Server Config
+
+on:
+  workflow_dispatch:
+
+jobs:
+  check-config:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout Repository
+      uses: actions/checkout@v2
+
+    - name: Set up Python
+      uses: actions/setup-python@v2
+      with:
+        python-version: '3.x'
+
+    - name: Install PyYAML
+      run: pip install pyyaml
+
+    - name: Parse YAML and Print Server Config
+      run: python parse_yaml.py
