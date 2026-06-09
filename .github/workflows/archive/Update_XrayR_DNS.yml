@@ -1,0 +1,45 @@
+name: Update XrayR DNS
+
+on:
+  workflow_dispatch:
+    inputs:
+      domain:
+        description: 'Domain to update'
+        required: true
+        type: string
+      new_ip:
+        description: 'New IP address'
+        required: true
+        type: string
+
+jobs:
+  update-dns:
+    runs-on: ubuntu-latest
+    steps:
+    - name: Get DNS Record
+      id: get_dns
+      run: |
+        DNS_RECORDS=$(curl -s -X GET \
+          "https://api.cloudflare.com/client/v4/zones/${{ secrets.CF_ZONE_ID }}/dns_records?name=${{ github.event.inputs.domain }}" \
+          -H "Authorization: Bearer ${{ secrets.CF_API_TOKEN }}" \
+          -H "Content-Type: application/json")
+        
+        DNS_ID=$(echo "$DNS_RECORDS" | jq -r '.result[]? | select(.name == "${{ github.event.inputs.domain }}") | .id')
+        echo "dns_id=$DNS_ID" >> $GITHUB_OUTPUT
+        
+    - name: Update DNS
+      run: |
+        UPDATE_DATA=$(jq -n \
+          --arg type "A" \
+          --arg name "${{ github.event.inputs.domain }}" \
+          --arg content "${{ github.event.inputs.new_ip }}" \
+          --argjson proxied false \
+          '{type: $type, name: $name, content: $content, proxied: $proxied}')
+        
+        RESPONSE=$(curl -s -X PUT \
+          "https://api.cloudflare.com/client/v4/zones/${{ secrets.CF_ZONE_ID }}/dns_records/${{ steps.get_dns.outputs.dns_id }}" \
+          -H "Authorization: Bearer ${{ secrets.CF_API_TOKEN }}" \
+          -H "Content-Type: application/json" \
+          --data "$UPDATE_DATA")
+        
+        echo "$RESPONSE" | jq .
