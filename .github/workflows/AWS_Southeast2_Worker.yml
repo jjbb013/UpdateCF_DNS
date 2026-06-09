@@ -7,7 +7,7 @@ on:
 env:
   INSTANCE_ID: i-048d778a229e7af22
   REGION: ap-southeast-1
-  AWS-ACCESS-KEY-ID: AKIAXSJOZG6SZUBLZ
+  AWS-ACCESS-KEY-ID: AKIAXSJOZG6SZORVUBLZ
   DOMAIN: 'aws.southeast2.onemorething.pp.ua' # 需要查询的DNS名称
   CF_ZONE_ID: 1fa9774064820f53fe1733e37a19f721
   CF_API_TOKEN: ${{ secrets.CF_API_TOKEN }} # 从GitHub Secrets中获取API Token
