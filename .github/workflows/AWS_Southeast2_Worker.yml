@@ -27,7 +27,7 @@ jobs:
     - name: Check Connectivity
       id: ping_check
       run: |
-        API_URL="https://cn.apihz.cn/api/wangzhan/ping.php?id=10012112&key=***&host=${{env.DOMAIN}}&type=1"
+        API_URL="https://cn.apihz.cn/api/wangzhan/ping.php?id=10012112&key=11a27dd28291dc973616eaad85dc6279&host=${{env.DOMAIN}}&type=1"
         response=$(curl -sL "$API_URL")
         echo "${{ env.DOMAIN }} $response"
         if [[ $response == *"\"code\": 200"* ]]; then
