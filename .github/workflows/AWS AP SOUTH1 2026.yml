@@ -1,11 +1,11 @@
-name: +AWS AP SOUTH1(印度) 2026
+name: +AWS AP SOUTH1(印度) 2026 wpan001
 on:
-  #schedule:
-  #  - cron: '0 */3 * * *' # 每3小时执行一次
+  schedule:
+    - cron: '0 */3 * * *' # 每3小时执行一次
   workflow_dispatch:
 
 env:
-  INSTANCE_ID: i-04ce1edba12be7524
+  INSTANCE_ID: i-07b6072b7af1ba99a
   REGION: ap-south-1
   DOMAIN: 'aws.ap-south1.onemorething.pp.ua' # 需要查询的DNS名称
   CF_ZONE_ID: 1fa9774064820f53fe1733e37a19f721
