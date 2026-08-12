@@ -1,13 +1,12 @@
-name: AWS_SG01_Worker
+name: AWS_AU01_Worker
 on:
-  #schedule:
-  #  - cron: '0 */4 * * *' # 每4小时执行一次
+  schedule:
+    - cron: '0 */3 * * *' # 每3小时执行一次
   workflow_dispatch:
 
 env:
-  INSTANCE_ID: i-0d252b0aa95a2ce08
-  REGION: ap-southeast-1
-  AWS-ACCESS-KEY-ID: AKIAXSJOZG6SZORVUBLZ
+  INSTANCE_ID: i-0f63829567dac053f
+  REGION: ap-southeast-2
   DOMAIN: 'kkk.onemorething.pp.ua' # 需要查询的DNS名称
   CF_ZONE_ID: 1fa9774064820f53fe1733e37a19f721
   CF_API_TOKEN: ${{ secrets.CF_API_TOKEN }} # 从GitHub Secrets中获取API Token
@@ -20,8 +19,8 @@ jobs:
     - name: Configure AWS Credentials
       uses: aws-actions/configure-aws-credentials@v1
       with:
-        aws-access-key-id: ${{ env.AWS-ACCESS-KEY-ID }}
-        aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY_SG_WORKER }}
+        aws-access-key-id: ${{ secrets.AWS_SECRET_ACCESS_KEY_AP_SOUTH_1 }}
+        aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY_AP_SOUTH_1 }}
         aws-region: ${{ env.REGION }}
 
     - name: Check Connectivity
