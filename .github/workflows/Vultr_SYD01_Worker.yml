@@ -5,7 +5,6 @@ on:
   workflow_dispatch:
 
 env:
-  INSTANCE_ID: 88b764c4-9786-4f27-9f90-19077bcdf4b1
   REGION: syd
   PLAN: vc2-1c-1gb
   LABEL: 'syd-node40'
@@ -34,8 +33,26 @@ jobs:
           echo "::set-output name=pingable::false"
         fi
 
-    - name: Rebuild Vultr Instance from Snapshot
+    - name: Resolve Instance ID by Label
       if: steps.ping_check.outputs.pingable == 'false'
+      id: resolve_instance
+      run: |
+        # 不硬编码 INSTANCE_ID：按 label+region 从实例列表动态解析（重建后实例ID会变，label不变）
+        INSTANCES=$(curl -s "https://api.vultr.com/v2/instances" \
+          -H "Authorization: Bearer ${{ env.VULTR_API_KEY }}")
+        MATCHES=$(echo "$INSTANCES" | jq -r '.instances[] | select(.label=="${{ env.LABEL }}" and .region=="${{ env.REGION }}") | .id')
+        COUNT=$(echo "$MATCHES" | grep -c . || true)
+        if [ "$COUNT" -ne 1 ]; then
+          echo "Expected exactly 1 instance with label=${{ env.LABEL }} region=${{ env.REGION }}, found $COUNT"
+          echo "Matches: $MATCHES"
+          exit 1
+        fi
+        INSTANCE_ID=$(echo "$MATCHES" | head -1)
+        echo "Resolved INSTANCE_ID: $INSTANCE_ID"
+        echo "INSTANCE_ID=$INSTANCE_ID" >> $GITHUB_ENV
+
+    - name: Rebuild Vultr Instance from Snapshot
+      if: steps.ping_check.outputs.pingable == 'false' && steps.resolve_instance.outcome == 'success'
       id: rebuild
       run: |
         # Vultr主IP无法原地更换，域名不通时通过快照重建拿新随机IP（配置/ufw/XrayR随快照保留，无需重做配置）
@@ -105,7 +122,7 @@ jobs:
         echo "NEW_INSTANCE_ID=$NEW_INSTANCE_ID" >> $GITHUB_ENV
 
     - name: Verify Ports from Runner
-      if: steps.ping_check.outputs.pingable == 'false' && steps.rebuild.outcome == 'success'
+      if: steps.ping_check.outputs.pingable == 'false' && steps.resolve_instance.outcome == 'success' && steps.rebuild.outcome == 'success'
       id: verify_ports
       run: |
         # GitHub runner在境外，可直接作为探测点；业务端口全部连通即证明XrayR已恢复，无需SSH登录
@@ -119,7 +136,7 @@ jobs:
         done
 
     - name: Get Cloudflare DNS Record ID
-      if: steps.ping_check.outputs.pingable == 'false' && steps.verify_ports.outcome == 'success'
+      if: steps.ping_check.outputs.pingable == 'false' && steps.resolve_instance.outcome == 'success' && steps.verify_ports.outcome == 'success'
       run: |
         # 使用cURL调用Cloudflare API获取DNS记录ID
         DNS_RECORDS=$(curl -s -X GET "https://api.cloudflare.com/client/v4/zones/${{ env.CF_ZONE_ID }}/dns_records?name=${{ env.DOMAIN }}" \
@@ -135,7 +152,7 @@ jobs:
         fi
 
     - name: Update DNS Record
-      if: steps.ping_check.outputs.pingable == 'false' && steps.verify_ports.outcome == 'success'
+      if: steps.ping_check.outputs.pingable == 'false' && steps.resolve_instance.outcome == 'success' && steps.verify_ports.outcome == 'success'
       id: update_dns
       run: |
         # 构建cURL请求命令，使用先前获取到的DNS_ID
@@ -158,7 +175,7 @@ jobs:
         fi
 
     - name: Destroy Old Instance and Snapshot
-      if: steps.ping_check.outputs.pingable == 'false' && steps.update_dns.outcome == 'success'
+      if: steps.ping_check.outputs.pingable == 'false' && steps.resolve_instance.outcome == 'success' && steps.update_dns.outcome == 'success'
       run: |
         # DNS切换成功后再清理旧实例和快照，避免新实例未就绪就销毁旧实例（销毁后旧IP不可找回）
         echo "Destroying old instance ${{ env.INSTANCE_ID }} ..."
@@ -169,4 +186,4 @@ jobs:
         curl -s -o /dev/null -w "DELETE snapshot -> HTTP %{http_code}\n" -X DELETE \
           "https://api.vultr.com/v2/snapshots/$SNAP_ID" \
           -H "Authorization: Bearer $VULTR_API_KEY"
-        echo "Important: 重建后 INSTANCE_ID 已变更为 $NEW_INSTANCE_ID，请更新本workflow的env.INSTANCE_ID后再依赖下次自动恢复！"
+        echo "Rebuild done. New instance ID: $NEW_INSTANCE_ID (label=${{ env.LABEL }}，下次运行将自动解析，无需手动更新)"
