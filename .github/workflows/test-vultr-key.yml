@@ -1,0 +1,30 @@
+name: Test Vultr API Key
+
+on:
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Resolve Instance ID by Label (same logic as Vultr workers)
+        run: |
+          RESP=$(curl -s -w '__HTTP__%{http_code}' "https://api.vultr.com/v2/instances" \
+            -H "Authorization: Bearer ${{ secrets.VULTR_API_KEY }}")
+          HTTP_CODE=$(echo "$RESP" | grep -o '__HTTP__[0-9]*' | grep -o '[0-9]*')
+          BODY=$(echo "$RESP" | sed 's/__HTTP__[0-9]*$//')
+          echo "HTTP: $HTTP_CODE"
+          if [ "$HTTP_CODE" != "200" ]; then
+            echo "API error body: $BODY"
+            exit 1
+          fi
+          echo "--- All instances (label | region | id | ip):"
+          echo "$BODY" | jq -r '.instances[] | "\(.label) | \(.region) | \(.id) | \(.main_ip)"'
+          MATCHES=$(echo "$BODY" | jq -r '.instances[]? | select(.label=="13nodes" and .region=="sea") | .id')
+          COUNT=$(echo "$MATCHES" | grep -c . || true)
+          echo "Resolve check -> label=13nodes region=sea count=$COUNT id=$MATCHES"
+          if [ "$COUNT" -ne 1 ]; then
+            echo "FAIL: expected exactly 1 match"
+            exit 1
+          fi
+          echo "PASS: Vultr API key works from GitHub Actions runner"
