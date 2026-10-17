@@ -38,9 +38,16 @@ jobs:
       id: resolve_instance
       run: |
         # 不硬编码 INSTANCE_ID：按 label+region 从实例列表动态解析（重建后实例ID会变，label不变）
-        INSTANCES=$(curl -s "https://api.vultr.com/v2/instances" \
+        RESP=$(curl -s -w '__HTTP__%{http_code}' "https://api.vultr.com/v2/instances" \
           -H "Authorization: Bearer ${{ env.VULTR_API_KEY }}")
-        MATCHES=$(echo "$INSTANCES" | jq -r '.instances[] | select(.label=="${{ env.LABEL }}" and .region=="${{ env.REGION }}") | .id')
+        HTTP_CODE=$(echo "$RESP" | grep -o '__HTTP__[0-9]*' | grep -o '[0-9]*')
+        BODY=$(echo "$RESP" | sed 's/__HTTP__[0-9]*$//')
+        if [ "$HTTP_CODE" != "200" ]; then
+          echo "Vultr API returned HTTP $HTTP_CODE (check API key IP whitelist / Access Control):"
+          echo "$BODY"
+          exit 1
+        fi
+        MATCHES=$(echo "$BODY" | jq -r '.instances[]? | select(.label=="${{ env.LABEL }}" and .region=="${{ env.REGION }}") | .id')
         COUNT=$(echo "$MATCHES" | grep -c . || true)
         if [ "$COUNT" -ne 1 ]; then
           echo "Expected exactly 1 instance with label=${{ env.LABEL }} region=${{ env.REGION }}, found $COUNT"
