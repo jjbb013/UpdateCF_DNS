@@ -7,52 +7,51 @@ jobs:
   candidate:
     runs-on: ubuntu-latest
     steps:
-      - name: Create candidate instance from snapshot (no auto china check)
+      - name: Create parking + candidate2 (92.171 occupied, next draws must differ)
         run: |
           AUTH="Authorization: Bearer ${{ secrets.VULTR_API_KEY }}"
-          OLD=27345bed-1411-4df8-ab4b-c6623feb97a5
           del_inst() { curl -s -o /dev/null -w "DELETE $1 -> HTTP %{http_code}\n" -X DELETE "https://api.vultr.com/v2/instances/$1" -H "$AUTH"; }
-
-          # 清掉之前的 candidate（如果有）
-          BODY=$(curl -s "https://api.vultr.com/v2/instances" -H "$AUTH")
-          for cid in $(echo "$BODY" | jq -r '.instances[] | select(.label=="candidate") | .id'); do del_inst $cid; done
-
-          # 有可用快照就复用，没有就建新快照
-          SNAP_ID=$(curl -s "https://api.vultr.com/v2/snapshots" -H "$AUTH" | jq -r '.snapshots[0]?.id // empty')
-          if [ -z "$SNAP_ID" ]; then
-            SNAP_ID=$(curl -s -X POST "https://api.vultr.com/v2/snapshots" -H "$AUTH" -H "Content-Type: application/json" \
-              --data-raw "{\"instance_id\":\"$OLD\",\"description\":\"candidate\"}" | jq -r '.snapshot.id')
-            echo "created snapshot: $SNAP_ID"
-            for i in $(seq 1 60); do
-              S=$(curl -s "https://api.vultr.com/v2/snapshots/$SNAP_ID" -H "$AUTH" | jq -r '.snapshot.status')
-              [ "$S" == "complete" ] && break
-              sleep 20
+          wait_ok() {
+            local id=$1 name=$2
+            for i in $(seq 1 40); do
+              INST=$(curl -s "https://api.vultr.com/v2/instances/$id" -H "$AUTH")
+              IP=$(echo "$INST" | jq -r '.instance.main_ip')
+              ST=$(echo "$INST" | jq -r '.instance.server_status')
+              echo "$name: ip=$IP status=$ST" >&2
+              if [ -n "$IP" ] && [ "$IP" != "0.0.0.0" ] && [ "$IP" != "null" ] && [ "$ST" == "ok" ]; then echo "$IP"; return 0; fi
+              sleep 15
             done
-            echo "snapshot status: $S"
-            [ "$S" == "complete" ] || { echo "snapshot timeout"; exit 1; }
-          else
-            echo "reuse snapshot: $SNAP_ID"
-          fi
+            return 1
+          }
 
-          NEW_ID=$(curl -s -X POST "https://api.vultr.com/v2/instances" -H "$AUTH" -H "Content-Type: application/json" \
-            --data-raw "{\"region\":\"sea\",\"plan\":\"vhf-1c-1gb\",\"snapshot_id\":\"$SNAP_ID\",\"label\":\"candidate\"}" | jq -r '.instance.id')
-          echo "candidate: $NEW_ID"
-          for i in $(seq 1 40); do
-            INST=$(curl -s "https://api.vultr.com/v2/instances/$NEW_ID" -H "$AUTH")
-            NEW_IP=$(echo "$INST" | jq -r '.instance.main_ip')
-            ST=$(echo "$INST" | jq -r '.instance.server_status')
-            echo "candidate: ip=$NEW_IP status=$ST" >&2
-            if [ -n "$NEW_IP" ] && [ "$NEW_IP" != "0.0.0.0" ] && [ "$NEW_IP" != "null" ] && [ "$ST" == "ok" ]; then break; fi
-            sleep 15
-          done
-          echo "CANDIDATE_IP=$NEW_IP"
+          BODY=$(curl -s "https://api.vultr.com/v2/instances" -H "$AUTH")
+          echo "=== current ==="; echo "$BODY" | jq -r '.instances[] | "\(.id) | \(.label) | \(.main_ip)"'
+          # 清旧 parking（保留 candidate=92.171 占位）
+          for pid in $(echo "$BODY" | jq -r '.instances[] | select(.label=="ip-parking") | .id'); do del_inst $pid; done
 
-          OK=0
-          for a in $(seq 1 20); do
-            F=0
-            for p in 30071 30077 30083; do timeout 5 bash -c "echo > /dev/tcp/$NEW_IP/$p" 2>/dev/null || { F=1; break; }; done
-            [ "$F" -eq 0 ] && { OK=1; echo "ports OK (attempt $a)"; break; }
-            sleep 15
+          SNAP_ID=$(curl -s "https://api.vultr.com/v2/snapshots" -H "$AUTH" | jq -r '.snapshots[0]?.id // empty')
+          echo "snapshot: $SNAP_ID"
+          [ -n "$SNAP_ID" ] || { echo "no snapshot!"; exit 1; }
+
+          mk() { curl -s -X POST "https://api.vultr.com/v2/instances" -H "$AUTH" -H "Content-Type: application/json" \
+            --data-raw "{\"region\":\"sea\",\"plan\":\"vhf-1c-1gb\",\"snapshot_id\":\"$SNAP_ID\",\"label\":\"$2\"}" | jq -r '.instance.id'; }
+
+          P_ID=$(mk x ip-parking); echo "parking: $P_ID"
+          P_IP=$(wait_ok $P_ID parking) || { echo "parking failed"; exit 1; }
+          echo "PARKING_IP=$P_IP"
+
+          C_ID=$(mk x candidate2); echo "candidate2: $C_ID"
+          C_IP=$(wait_ok $C_ID candidate2) || { echo "candidate2 failed"; del_inst $P_ID; exit 1; }
+          echo "CANDIDATE2_IP=$C_IP"
+
+          for ip in $P_IP $C_IP; do
+            OK=0
+            for a in $(seq 1 20); do
+              F=0
+              for p in 30071 30077 30083; do timeout 5 bash -c "echo > /dev/tcp/$ip/$p" 2>/dev/null || { F=1; break; }; done
+              [ "$F" -eq 0 ] && { OK=1; break; }
+              sleep 15
+            done
+            echo "PORTS $ip -> $([ $OK == 1 ] && echo OK || echo FAIL)"
           done
-          [ "$OK" == "1" ] || { echo "ports failed"; exit 1; }
-          echo "CANDIDATE READY: id=$NEW_ID ip=$NEW_IP (label=candidate, 用户国内验证后切DNS)"
+          echo "READY: parking=$P_ID@$P_IP candidate2=$C_ID@$C_IP (candidate=92.171 occupied) 请用户国内测试后指定用哪台"
