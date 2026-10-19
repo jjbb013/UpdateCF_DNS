@@ -1,0 +1,27 @@
+name: Vultr Instance Audit
+
+on:
+  workflow_dispatch:
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Dump instances and port-check candidates
+        run: |
+          BODY=$(curl -s "https://api.vultr.com/v2/instances" \
+            -H "Authorization: Bearer ${{ secrets.VULTR_API_KEY }}")
+          echo "--- All instances:"
+          echo "$BODY" | jq -r '.instances[] | "\(.id) | label=\(.label) | \(.region) | \(.main_ip) | status=\(.status) | server=\(.server_status) | created=\(.date_created) | power=\(.power_status)"'
+          IP_OLD=$(echo "$BODY" | jq -r '.instances[] | select(.id=="27345bed-1411-4df8-ab4b-c6623feb97a5") | .main_ip')
+          IP_NEW=$(echo "$BODY" | jq -r '.instances[] | select(.id=="0f2edb11-65d3-415a-a1bc-12f88ba8ed29") | .main_ip // "GONE"')
+          echo "--- old_ip=$IP_OLD new_ip=$IP_NEW"
+          echo "--- Port checks from runner (30071-30083 sample):"
+          for ip in $IP_OLD $IP_NEW; do
+            [ "$ip" = "GONE" ] && continue
+            ok=0
+            for p in 30071 30077 30083; do
+              if timeout 5 bash -c "echo > /dev/tcp/$ip/$p" 2>/dev/null; then ok=$((ok+1)); fi
+            done
+            echo "$ip open_ports_sample=$ok/3"
+          done
