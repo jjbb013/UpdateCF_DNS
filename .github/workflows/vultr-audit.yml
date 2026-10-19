@@ -86,15 +86,20 @@ jobs:
 
           # 4) 端口轮询验证
           ALL_OK=0
-          for attempt in $(seq 1 15); do
+          for attempt in $(seq 1 30); do
             FAIL=0
             for port in 30071 30077 30083; do
               timeout 5 bash -c "echo > /dev/tcp/$REAL_IP/$port" 2>/dev/null || { FAIL=1; break; }
             done
-            [ "$FAIL" -eq 0 ] && { ALL_OK=1; break; }
+            [ "$FAIL" -eq 0 ] && { ALL_OK=1; echo "ports OK on attempt $attempt"; break; }
             sleep 20
           done
           if [ "$ALL_OK" -ne 1 ]; then
+            if timeout 5 bash -c "echo > /dev/tcp/$REAL_IP/22" 2>/dev/null; then
+              echo "DIAG: port 22 open but 30071-30083 closed -> XrayR not listening (check panel connection or boot time)"
+            else
+              echo "DIAG: port 22 also closed -> instance/network problem"
+            fi
             echo "ports not reachable on $REAL_IP"
             delete_instance $REAL_ID; delete_instance $PARK_ID
             curl -s -o /dev/null -w "DELETE snapshot -> HTTP %{http_code}\n" -X DELETE "https://api.vultr.com/v2/snapshots/$SNAP_ID" -H "$AUTH"
