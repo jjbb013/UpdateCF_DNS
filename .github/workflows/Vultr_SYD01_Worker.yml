@@ -163,7 +163,7 @@ jobs:
         fi
 
     - name: Check New IP from China
-      if: steps.ping_check.outputs.pingable == 'false' && steps.resolve_instance.outcome == 'success' && steps.rebuild.outcome == 'success' && steps.verify_ports.outcome == 'success' && steps.china_check.outcome == 'success'
+      if: steps.ping_check.outputs.pingable == 'false' && steps.resolve_instance.outcome == 'success' && steps.rebuild.outcome == 'success' && steps.verify_ports.outcome == 'success'
       id: china_check
       run: |
         # 重建分到的IP可能是被回收的脏IP（以前在国内被封过），切换DNS前必须验证国内可达
