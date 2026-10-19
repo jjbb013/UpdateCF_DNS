@@ -1,16 +1,18 @@
-name: Vultr Salvage v3
+name: Vultr Swap v4
 
 on:
   workflow_dispatch:
 
 jobs:
-  salvage:
+  swap:
     runs-on: ubuntu-latest
     steps:
-      - name: China-check 87.161 then salvage
+      - name: Swap IP with domain-based China check and rollback
         run: |
           AUTH="Authorization: Bearer ${{ secrets.VULTR_API_KEY }}"
           CFA="Authorization: Bearer ${{ secrets.CF_API_TOKEN }}"
+          ZONE="${{ secrets.CF_ZONE_ID }}"
+          DOMAIN="kkk.onemorething.pp.ua"
           del_inst() { curl -s -o /dev/null -w "DELETE $1 -> HTTP %{http_code}\n" -X DELETE "https://api.vultr.com/v2/instances/$1" -H "$AUTH"; }
           del_snap() { curl -s -o /dev/null -w "DELETE snapshot $1 -> HTTP %{http_code}\n" -X DELETE "https://api.vultr.com/v2/snapshots/$1" -H "$AUTH"; }
 
@@ -18,42 +20,83 @@ jobs:
           BODY=$(curl -s "https://api.vultr.com/v2/instances" -H "$AUTH")
           echo "$BODY" | jq -r '.instances[] | "\(.id) | \(.label) | \(.main_ip)"'
 
-          R_ID=1abe0ddb-05d8-428c-94c9-401a7a1c24b0
-          R_IP=144.202.87.161
-          O_ID=27345bed-1411-4df8-ab4b-c6623feb97a5
-
-          # 校验 R 存活且 IP 匹配（双重确认）
-          R_CHK=$(echo "$BODY" | jq -r --arg id "$R_ID" '.instances[] | select(.id==$id) | .main_ip')
-          if [ "$R_CHK" != "$R_IP" ]; then echo "SAFETY: R mismatch ($R_CHK), abort"; exit 1; fi
-          O_CHK=$(echo "$BODY" | jq -r --arg id "$O_ID" '.instances[] | select(.id==$id) | .id')
-          if [ "$O_CHK" != "$O_ID" ]; then echo "SAFETY: O missing, abort"; exit 1; fi
-
-          # 先清占位实例（无论走向如何都不需要了）
-          for pid in $(echo "$BODY" | jq -r '.instances[] | select(.label=="ip-parking") | .id'); do
-            del_inst $pid
-          done
-
-          # 中国可达检查（修正后的 URL 提取：BRE 无 *? 惰性语法）
-          PREFIX=$(curl -s "https://raw.githubusercontent.com/jjbb013/UpdateCF_DNS/main/.github/workflows/Vultr_SEA01_Worker.yml" | grep -o 'https://cn\.apihz\.cn/api/wangzhan/ping\.php[^"]*host=' | head -1)
-          echo "prefix=$PREFIX"
-          resp=$(curl -sL "${PREFIX}host=$R_IP&type=1")
-          echo "China ping $R_IP -> $resp"
-
-          if [[ $resp == *"\"code\": 200"* ]]; then
-            echo "== IP 国内可达，直接切换 DNS =="
-            DNS_ID=$(curl -s "https://api.cloudflare.com/client/v4/zones/${{ secrets.CF_ZONE_ID }}/dns_records?name=kkk.onemorething.pp.ua" -H "$CFA" | jq -r '.result[0].id')
-            PROXIED=$(curl -s "https://api.cloudflare.com/client/v4/zones/${{ secrets.CF_ZONE_ID }}/dns_records/$DNS_ID" -H "$CFA" | jq -r '.result.proxied')
-            curl -s -X PUT "https://api.cloudflare.com/client/v4/zones/${{ secrets.CF_ZONE_ID }}/dns_records/$DNS_ID" \
-              -H "$CFA" -H "Content-Type: application/json" \
-              --data-raw "{\"type\":\"A\",\"name\":\"kkk.onemorething.pp.ua\",\"content\":\"$R_IP\",\"proxied\":$PROXIED}" \
-              -o /dev/null -w "DNS update -> HTTP %{http_code}\n"
-            sleep 10
-            dig +short @1.1.1.1 kkk.onemorething.pp.ua A || true
-            del_inst $O_ID
-          else
-            echo "== IP 国内不通，销毁 R，回头重跑 =="
-            del_inst $R_ID
+          # 0) 清残留：59cdf28c 占着 92.171 + 13nodes 标签（上次销毁未生效）
+          LEFT=$(echo "$BODY" | jq -r '.instances[] | select(.id=="59cdf28c-6f8f-469d-9ca8-f0c8ef32f1d6" and .main_ip=="144.202.92.171") | .id')
+          if [ "$LEFT" == "59cdf28c-6f8f-469d-9ca8-f0c8ef32f1d6" ]; then
+            del_inst 59cdf28c-6f8f-469d-9ca8-f0c8ef32f1d6
           fi
-          for sid in $(curl -s "https://api.vultr.com/v2/snapshots" -H "$AUTH" | jq -r '.snapshots[]?.id'); do del_snap $sid; done
+          sleep 3
+
+          OLD=27345bed-1411-4df8-ab4b-c6623feb97a5
+          # 当前 DNS（用于回滚）
+          DNS_ID=$(curl -s "https://api.cloudflare.com/client/v4/zones/$ZONE/dns_records?name=$DOMAIN" -H "$CFA" | jq -r '.result[0].id')
+          PROXIED=$(curl -s "https://api.cloudflare.com/client/v4/zones/$ZONE/dns_records/$DNS_ID" -H "$CFA" | jq -c '{p:.result.proxied, ip:.result.content}')
+          OLD_IP=$(echo "$PROXIED" | jq -r '.ip'); PX=$(echo "$PROXIED" | jq -r '.p')
+          echo "current DNS: $DOMAIN -> $OLD_IP (proxied=$PX)"
+
+          # 1) 快照
+          SNAP_ID=$(curl -s -X POST "https://api.vultr.com/v2/snapshots" -H "$AUTH" -H "Content-Type: application/json" \
+            --data-raw "{\"instance_id\":\"$OLD\",\"description\":\"swap-v4\"}" | jq -r '.snapshot.id')
+          echo "snapshot: $SNAP_ID"
+          for i in $(seq 1 60); do
+            S=$(curl -s "https://api.vultr.com/v2/snapshots/$SNAP_ID" -H "$AUTH" | jq -r '.snapshot.status')
+            [ "$S" == "complete" ] && break
+            sleep 20
+          done
+          echo "snapshot status: $S"
+          [ "$S" == "complete" ] || { echo "snapshot timeout"; exit 1; }
+
+          # 2) 建新实例
+          NEW_ID=$(curl -s -X POST "https://api.vultr.com/v2/instances" -H "$AUTH" -H "Content-Type: application/json" \
+            --data-raw "{\"region\":\"sea\",\"plan\":\"vhf-1c-1gb\",\"snapshot_id\":\"$SNAP_ID\",\"label\":\"13nodes\"}" | jq -r '.instance.id')
+          echo "new: $NEW_ID"
+          NEW_IP=""
+          for i in $(seq 1 40); do
+            INST=$(curl -s "https://api.vultr.com/v2/instances/$NEW_ID" -H "$AUTH")
+            NEW_IP=$(echo "$INST" | jq -r '.instance.main_ip')
+            ST=$(echo "$INST" | jq -r '.instance.server_status')
+            echo "new: ip=$NEW_IP status=$ST" >&2
+            if [ -n "$NEW_IP" ] && [ "$NEW_IP" != "0.0.0.0" ] && [ "$NEW_IP" != "null" ] && [ "$ST" == "ok" ]; then break; fi
+            sleep 15
+          done
+          echo "NEW_IP=$NEW_IP"
+          echo "$NEW_IP" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$' || { echo "invalid IP"; del_inst $NEW_ID; del_snap $SNAP_ID; exit 1; }
+
+          # 3) 端口轮询
+          OK=0
+          for a in $(seq 1 30); do
+            F=0
+            for p in 30071 30077 30083; do timeout 5 bash -c "echo > /dev/tcp/$NEW_IP/$p" 2>/dev/null || { F=1; break; }; done
+            [ "$F" -eq 0 ] && { OK=1; echo "ports OK (attempt $a)"; break; }
+            sleep 20
+          done
+          if [ "$OK" -ne 1 ]; then echo "ports failed"; del_inst $NEW_ID; del_snap $SNAP_ID; exit 1; fi
+
+          # 4) 切 DNS + 域名级国内检查（3次取多数），失败回滚
+          upd_dns() { curl -s -X PUT "https://api.cloudflare.com/client/v4/zones/$ZONE/dns_records/$DNS_ID" -H "$CFA" -H "Content-Type: application/json" \
+            --data-raw "{\"type\":\"A\",\"name\":\"$DOMAIN\",\"content\":\"$1\",\"proxied\":$PX}" -o /dev/null -w "DNS -> $1: HTTP %{http_code}\n"; }
+          upd_dns $NEW_IP
+          sleep 20
+          PREFIX=$(curl -s "https://raw.githubusercontent.com/jjbb013/UpdateCF_DNS/main/.github/workflows/Vultr_SEA01_Worker.yml" | grep -o 'https://cn\.apihz\.cn/api/wangzhan/ping\.php[^"]*host=' | head -1)
+          HITS=0
+          for t in 1 2 3; do
+            resp=$(curl -sL "${PREFIX}host=$DOMAIN&type=1")
+            echo "china ping try$t: $resp"
+            [[ $resp == *"\"code\": 200"* ]] && HITS=$((HITS+1))
+            [ $t -lt 3 ] && sleep 30
+          done
+          echo "china hits: $HITS/3"
+          if [ $HITS -ge 2 ]; then
+            echo "== SUCCESS: DNS stays on $NEW_IP =="
+            del_inst $OLD
+            del_snap $SNAP_ID
+          else
+            echo "== FAIL: rollback DNS to $OLD_IP =="
+            upd_dns $OLD_IP
+            del_inst $NEW_ID
+            del_snap $SNAP_ID
+            exit 1
+          fi
           echo "=== POST-STATE ==="
           curl -s "https://api.vultr.com/v2/instances" -H "$AUTH" | jq -r '.instances[] | "\(.id) | \(.label) | \(.main_ip)"'
+          echo "SWAP-V4 DONE new_ip=$NEW_IP"
