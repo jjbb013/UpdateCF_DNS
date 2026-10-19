@@ -1,28 +1,135 @@
-name: Vultr Cleanup Orphan
+name: Vultr Parking Swap
 
 on:
   workflow_dispatch:
 
 jobs:
-  cleanup:
+  swap:
     runs-on: ubuntu-latest
     steps:
-      - name: Destroy Sydney orphan b0ccaa70 (safety-checked)
+      - name: Parking-swap rebuild to escape recycled blocked IP
         run: |
+          set -e
           AUTH="Authorization: Bearer ${{ secrets.VULTR_API_KEY }}"
-          # 三重安全检查：DNS仍指旧机、旧机存活、目标IP/ID匹配，全过才销毁
-          DNS_IP=$(curl -s "https://api.cloudflare.com/client/v4/zones/${{ secrets.CF_ZONE_ID }}/dns_records?name=aws.southeast2.onemorething.pp.ua" \
-            -H "Authorization: Bearer ${{ secrets.CF_API_TOKEN }}" | jq -r '.result[0].content')
-          echo "DNS aws.southeast2 -> $DNS_IP"
-          if [ "$DNS_IP" != "207.148.81.3" ]; then echo "SAFETY: DNS not pointing to old instance, abort"; exit 1; fi
-          BODY=$(curl -s "https://api.vultr.com/v2/instances" -H "$AUTH")
-          OLD=$(echo "$BODY" | jq -r '.instances[] | select(.id=="88b764c4-9786-4f27-9f90-19077bcdf4b1") | .id')
-          TARGET=$(echo "$BODY" | jq -r '.instances[] | select(.id=="b0ccaa70-5c98-402b-b863-041bc86fb80f" and .main_ip=="45.32.247.95") | .id')
-          if [ "$OLD" != "88b764c4-9786-4f27-9f90-19077bcdf4b1" ]; then echo "SAFETY: old instance missing, abort"; exit 1; fi
-          if [ "$TARGET" != "b0ccaa70-5c98-402b-b863-041bc86fb80f" ]; then echo "SAFETY: orphan mismatch, abort"; exit 1; fi
-          curl -s -o /dev/null -w "DELETE orphan b0ccaa70 -> HTTP %{http_code}\n" -X DELETE \
-            "https://api.vultr.com/v2/instances/b0ccaa70-5c98-402b-b863-041bc86fb80f" -H "$AUTH"
-          sleep 5
-          N=$(curl -s "https://api.vultr.com/v2/instances" -H "$AUTH" | jq -r '[.instances[] | select(.label=="syd-node40" and .region=="syd")] | length')
-          echo "syd-node40/syd count=$N (expect 1)"
-          [ "$N" == "1" ] && echo "CLEANUP PASS" || { echo "CLEANUP FAIL"; exit 1; }
+          CFA="Authorization: Bearer ${{ secrets.CF_API_TOKEN }}"
+          wait_instance() {
+            local id=$1 name=$2
+            for i in $(seq 1 40); do
+              INST=$(curl -s "https://api.vultr.com/v2/instances/$id" -H "$AUTH")
+              IP=$(echo "$INST" | jq -r '.instance.main_ip')
+              ST=$(echo "$INST" | jq -r '.instance.server_status')
+              echo "$name: ip=$IP status=$ST ($(date))"
+              if [ -n "$IP" ] && [ "$IP" != "0.0.0.0" ] && [ "$IP" != "null" ] && [ "$ST" == "ok" ]; then
+                echo "$IP"; return 0
+              fi
+              sleep 15
+            done
+            return 1
+          }
+          delete_instance() {
+            curl -s -o /dev/null -w "DELETE $1 -> HTTP %{http_code}\n" -X DELETE \
+              "https://api.vultr.com/v2/instances/$1" -H "$AUTH"
+          }
+
+          echo "=== PRE-STATE instances ==="
+          curl -s "https://api.vultr.com/v2/instances" -H "$AUTH" | jq -r '.instances[] | "\(.id) | \(.label) | \(.main_ip)"'
+          echo "=== PRE-STATE snapshots ==="
+          curl -s "https://api.vultr.com/v2/snapshots" -H "$AUTH" | jq -r '.snapshots[]? | "\(.id) | \(.description) | \(.status)"'
+
+          OLD=27345bed-1411-4df8-ab4b-c6623feb97a5
+          # 清掉历史遗留快照（如果有）
+          for sid in $(curl -s "https://api.vultr.com/v2/snapshots" -H "$AUTH" | jq -r '.snapshots[]?.id'); do
+            curl -s -o /dev/null -w "DELETE stale snapshot $sid -> HTTP %{http_code}\n" -X DELETE \
+              "https://api.vultr.com/v2/snapshots/$sid" -H "$AUTH"
+          done
+
+          # 1) 快照旧机
+          SNAP=$(curl -s -X POST "https://api.vultr.com/v2/snapshots" -H "$AUTH" -H "Content-Type: application/json" \
+            --data-raw "{\"instance_id\":\"$OLD\",\"description\":\"parking-swap\"}")
+          SNAP_ID=$(echo "$SNAP" | jq -r '.snapshot.id')
+          echo "snapshot: $SNAP_ID"
+          for i in $(seq 1 60); do
+            S=$(curl -s "https://api.vultr.com/v2/snapshots/$SNAP_ID" -H "$AUTH" | jq -r '.snapshot.status')
+            echo "snapshot status: $S"
+            [ "$S" == "complete" ] && break
+            sleep 20
+          done
+          [ "$S" == "complete" ] || { echo "snapshot timeout"; exit 1; }
+
+          # 2) 占位实例（占住回收池里的脏IP）
+          PARK_RESP=$(curl -s -X POST "https://api.vultr.com/v2/instances" -H "$AUTH" -H "Content-Type: application/json" \
+            --data-raw "{\"region\":\"sea\",\"plan\":\"vhf-1c-1gb\",\"snapshot_id\":\"$SNAP_ID\",\"label\":\"ip-parking\"}")
+          PARK_ID=$(echo "$PARK_RESP" | jq -r '.instance.id')
+          if [ -z "$PARK_ID" ] || [ "$PARK_ID" == "null" ]; then echo "parking create failed: $PARK_RESP"; exit 1; fi
+          echo "parking: $PARK_ID"
+          PARK_IP=$(wait_instance $PARK_ID parking) || { echo "parking not ready"; exit 1; }
+          echo "PARK_IP=$PARK_IP"
+
+          # 3) 正式实例（此时池里少了 PARK_IP，应分到不同的IP）
+          REAL_RESP=$(curl -s -X POST "https://api.vultr.com/v2/instances" -H "$AUTH" -H "Content-Type: application/json" \
+            --data-raw "{\"region\":\"sea\",\"plan\":\"vhf-1c-1gb\",\"snapshot_id\":\"$SNAP_ID\",\"label\":\"13nodes\"}")
+          REAL_ID=$(echo "$REAL_RESP" | jq -r '.instance.id')
+          if [ -z "$REAL_ID" ] || [ "$REAL_ID" == "null" ]; then
+            echo "REAL create failed (pool may be exhausted): $REAL_RESP"
+            delete_instance $PARK_ID
+            exit 1
+          fi
+          echo "real: $REAL_ID"
+          REAL_IP=$(wait_instance $REAL_ID real) || { echo "real not ready"; delete_instance $PARK_ID; exit 1; }
+          echo "REAL_IP=$REAL_IP"
+          if [ "$REAL_IP" == "$PARK_IP" ] || [ "$REAL_IP" == "144.202.85.116" ]; then
+            echo "REAL got same/recycled IP $REAL_IP, pool exhausted"
+            delete_instance $REAL_ID
+            delete_instance $PARK_ID
+            exit 1
+          fi
+
+          # 4) 端口轮询验证
+          ALL_OK=0
+          for attempt in $(seq 1 15); do
+            FAIL=0
+            for port in 30071 30077 30083; do
+              timeout 5 bash -c "echo > /dev/tcp/$REAL_IP/$port" 2>/dev/null || { FAIL=1; break; }
+            done
+            [ "$FAIL" -eq 0 ] && { ALL_OK=1; break; }
+            sleep 20
+          done
+          if [ "$ALL_OK" -ne 1 ]; then
+            echo "ports not reachable on $REAL_IP"
+            delete_instance $REAL_ID; delete_instance $PARK_ID
+            curl -s -o /dev/null -w "DELETE snapshot -> HTTP %{http_code}\n" -X DELETE "https://api.vultr.com/v2/snapshots/$SNAP_ID" -H "$AUTH"
+            exit 1
+          fi
+          echo "ports OK on $REAL_IP"
+
+          # 5) 中国可达检查（apihz）
+          API_URL_PREFIX=$(curl -s "https://raw.githubusercontent.com/jjbb013/UpdateCF_DNS/main/.github/workflows/Vultr_SEA01_Worker.yml" | grep -o 'https://cn\.apihz\.cn/api/wangzhan/ping\.php?[^"]*?host=' | head -1)
+          resp=$(curl -sL "${API_URL_PREFIX}host=$REAL_IP&type=1")
+          echo "China ping $REAL_IP -> $resp"
+          if [[ $resp != *"\"code\": 200"* ]]; then
+            echo "REAL IP blocked from China, aborting"
+            delete_instance $REAL_ID; delete_instance $PARK_ID
+            curl -s -o /dev/null -w "DELETE snapshot -> HTTP %{http_code}\n" -X DELETE "https://api.vultr.com/v2/snapshots/$SNAP_ID" -H "$AUTH"
+            exit 1
+          fi
+
+          # 6) 切 DNS
+          DNS_ID=$(curl -s "https://api.cloudflare.com/client/v4/zones/${{ secrets.CF_ZONE_ID }}/dns_records?name=kkk.onemorething.pp.ua" \
+            -H "$CFA" | jq -r '.result[0].id')
+          PROXIED=$(curl -s "https://api.cloudflare.com/client/v4/zones/${{ secrets.CF_ZONE_ID }}/dns_records/$DNS_ID" \
+            -H "$CFA" | jq -r '.result.proxied')
+          curl -s -X PUT "https://api.cloudflare.com/client/v4/zones/${{ secrets.CF_ZONE_ID }}/dns_records/$DNS_ID" \
+            -H "$CFA" -H "Content-Type: application/json" \
+            --data-raw "{\"type\":\"A\",\"name\":\"kkk.onemorething.pp.ua\",\"content\":\"$REAL_IP\",\"proxied\":$PROXIED}" \
+            -o /dev/null -w "DNS update -> HTTP %{http_code}\n"
+          sleep 10
+          dig +short @1.1.1.1 kkk.onemorething.pp.ua A || true
+
+          # 7) 清理旧机 + 占位 + 快照
+          delete_instance $OLD
+          delete_instance $PARK_ID
+          curl -s -o /dev/null -w "DELETE snapshot -> HTTP %{http_code}\n" -X DELETE "https://api.vultr.com/v2/snapshots/$SNAP_ID" -H "$AUTH"
+
+          echo "=== POST-STATE ==="
+          curl -s "https://api.vultr.com/v2/instances" -H "$AUTH" | jq -r '.instances[] | "\(.id) | \(.label) | \(.main_ip)"'
+          echo "PARKING SWAP DONE: new_ip=$REAL_IP"
