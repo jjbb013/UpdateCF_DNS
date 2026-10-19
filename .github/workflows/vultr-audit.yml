@@ -7,24 +7,22 @@ jobs:
   cleanup:
     runs-on: ubuntu-latest
     steps:
-      - name: Destroy unswitched new instance and its snapshot
+      - name: Destroy Sydney orphan b0ccaa70 (safety-checked)
         run: |
           AUTH="Authorization: Bearer ${{ secrets.VULTR_API_KEY }}"
-          # 确认目标：03c7ddbf 持有 144.202.92.171（被墙回收IP，DNS未切换过去）
+          # 三重安全检查：DNS仍指旧机、旧机存活、目标IP/ID匹配，全过才销毁
+          DNS_IP=$(curl -s "https://api.cloudflare.com/client/v4/zones/${{ secrets.CF_ZONE_ID }}/dns_records?name=aws.southeast2.onemorething.pp.ua" \
+            -H "Authorization: Bearer ${{ secrets.CF_API_TOKEN }}" | jq -r '.result[0].content')
+          echo "DNS aws.southeast2 -> $DNS_IP"
+          if [ "$DNS_IP" != "207.148.81.3" ]; then echo "SAFETY: DNS not pointing to old instance, abort"; exit 1; fi
           BODY=$(curl -s "https://api.vultr.com/v2/instances" -H "$AUTH")
-          echo "$BODY" | jq -r '.instances[] | "\(.id) | \(.label) | \(.main_ip)"'
-          TARGET=$(echo "$BODY" | jq -r '.instances[] | select(.id=="03c7ddbf-8211-4917-b343-8cacb928a492" and .main_ip=="144.202.92.171") | .id')
-          if [ "$TARGET" == "03c7ddbf-8211-4917-b343-8cacb928a492" ]; then
-            curl -s -o /dev/null -w "DELETE 03c7ddbf -> HTTP %{http_code}\n" -X DELETE \
-              "https://api.vultr.com/v2/instances/03c7ddbf-8211-4917-b343-8cacb928a492" -H "$AUTH"
-          else
-            echo "SAFETY: target instance/IP mismatch, NOT destroying"
-            exit 1
-          fi
-          curl -s -o /dev/null -w "DELETE snapshot 3ad80caa -> HTTP %{http_code}\n" -X DELETE \
-            "https://api.vultr.com/v2/snapshots/3ad80caa-e45c-4141-936a-08522019e904" -H "$AUTH"
+          OLD=$(echo "$BODY" | jq -r '.instances[] | select(.id=="88b764c4-9786-4f27-9f90-19077bcdf4b1") | .id')
+          TARGET=$(echo "$BODY" | jq -r '.instances[] | select(.id=="b0ccaa70-5c98-402b-b863-041bc86fb80f" and .main_ip=="45.32.247.95") | .id')
+          if [ "$OLD" != "88b764c4-9786-4f27-9f90-19077bcdf4b1" ]; then echo "SAFETY: old instance missing, abort"; exit 1; fi
+          if [ "$TARGET" != "b0ccaa70-5c98-402b-b863-041bc86fb80f" ]; then echo "SAFETY: orphan mismatch, abort"; exit 1; fi
+          curl -s -o /dev/null -w "DELETE orphan b0ccaa70 -> HTTP %{http_code}\n" -X DELETE \
+            "https://api.vultr.com/v2/instances/b0ccaa70-5c98-402b-b863-041bc86fb80f" -H "$AUTH"
           sleep 5
-          FINAL=$(curl -s "https://api.vultr.com/v2/instances" -H "$AUTH")
-          N=$(echo "$FINAL" | jq -r '[.instances[] | select(.label=="13nodes" and .region=="sea")] | length')
-          echo "13nodes/sea count=$N (expect 1)"
+          N=$(curl -s "https://api.vultr.com/v2/instances" -H "$AUTH" | jq -r '[.instances[] | select(.label=="syd-node40" and .region=="syd")] | length')
+          echo "syd-node40/syd count=$N (expect 1)"
           [ "$N" == "1" ] && echo "CLEANUP PASS" || { echo "CLEANUP FAIL"; exit 1; }
