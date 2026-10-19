@@ -7,32 +7,24 @@ jobs:
   cleanup:
     runs-on: ubuntu-latest
     steps:
-      - name: Destroy orphan instance and stale snapshots
+      - name: Destroy unswitched new instance and its snapshot
         run: |
           AUTH="Authorization: Bearer ${{ secrets.VULTR_API_KEY }}"
-          # 0) 安全确认：孤儿实例存在且不是悉尼机/当前 DNS 目标
+          # 确认目标：03c7ddbf 持有 144.202.92.171（被墙回收IP，DNS未切换过去）
           BODY=$(curl -s "https://api.vultr.com/v2/instances" -H "$AUTH")
-          echo "--- Before: instances"
-          echo "$BODY" | jq -r '.instances[] | "\(.id) | \(.label) | \(.region) | \(.main_ip)"'
-          ORPHAN=$(echo "$BODY" | jq -r '.instances[] | select(.id=="0f2edb11-65d3-415a-a1bc-12f88ba8ed29") | .id')
-          if [ "$ORPHAN" != "0f2edb11-65d3-415a-a1bc-12f88ba8ed29" ]; then
-            echo "Orphan not found, nothing to destroy"
+          echo "$BODY" | jq -r '.instances[] | "\(.id) | \(.label) | \(.main_ip)"'
+          TARGET=$(echo "$BODY" | jq -r '.instances[] | select(.id=="03c7ddbf-8211-4917-b343-8cacb928a492" and .main_ip=="144.202.92.171") | .id')
+          if [ "$TARGET" == "03c7ddbf-8211-4917-b343-8cacb928a492" ]; then
+            curl -s -o /dev/null -w "DELETE 03c7ddbf -> HTTP %{http_code}\n" -X DELETE \
+              "https://api.vultr.com/v2/instances/03c7ddbf-8211-4917-b343-8cacb928a492" -H "$AUTH"
           else
-            curl -s -o /dev/null -w "DELETE orphan 0f2edb11 -> HTTP %{http_code}\n" -X DELETE \
-              "https://api.vultr.com/v2/instances/0f2edb11-65d3-415a-a1bc-12f88ba8ed29" -H "$AUTH"
+            echo "SAFETY: target instance/IP mismatch, NOT destroying"
+            exit 1
           fi
-          # 删除所有遗留快照（10-18 的 121e8f7c 等）
-          SNAPS=$(curl -s "https://api.vultr.com/v2/snapshots" -H "$AUTH")
-          echo "--- Snapshots before:"
-          echo "$SNAPS" | jq -r '.snapshots[]? | "\(.id) | \(.description) | \(.status)"'
-          for sid in $(echo "$SNAPS" | jq -r '.snapshots[]?.id'); do
-            curl -s -o /dev/null -w "DELETE snapshot $sid -> HTTP %{http_code}\n" -X DELETE \
-              "https://api.vultr.com/v2/snapshots/$sid" -H "$AUTH"
-          done
-          # 最终确认
+          curl -s -o /dev/null -w "DELETE snapshot 3ad80caa -> HTTP %{http_code}\n" -X DELETE \
+            "https://api.vultr.com/v2/snapshots/3ad80caa-e45c-4141-936a-08522019e904" -H "$AUTH"
+          sleep 5
           FINAL=$(curl -s "https://api.vultr.com/v2/instances" -H "$AUTH")
-          echo "--- After: instances"
-          echo "$FINAL" | jq -r '.instances[] | "\(.id) | \(.label) | \(.region) | \(.main_ip)"'
           N=$(echo "$FINAL" | jq -r '[.instances[] | select(.label=="13nodes" and .region=="sea")] | length')
           echo "13nodes/sea count=$N (expect 1)"
           [ "$N" == "1" ] && echo "CLEANUP PASS" || { echo "CLEANUP FAIL"; exit 1; }
