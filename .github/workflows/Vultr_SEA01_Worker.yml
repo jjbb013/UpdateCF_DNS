@@ -3,6 +3,11 @@ on:
   schedule:
     - cron: '30 */3 * * *' # 每3小时执行一次（与AWS workflow错峰）
   workflow_dispatch:
+    inputs:
+      force:
+        description: 'Force rebuild even if domain is pingable'
+        type: boolean
+        default: false
 
 env:
   REGION: sea
@@ -30,6 +35,10 @@ jobs:
           echo "::set-output name=pingable::true"
         else
           echo "Domain is NOT pingable at $(date)"
+          echo "::set-output name=pingable::false"
+        fi
+        if [ "${{ github.event.inputs.force }}" == "true" ]; then
+          echo "Force rebuild requested via workflow_dispatch"
           echo "::set-output name=pingable::false"
         fi
 
@@ -132,18 +141,48 @@ jobs:
       if: steps.ping_check.outputs.pingable == 'false' && steps.resolve_instance.outcome == 'success' && steps.rebuild.outcome == 'success'
       id: verify_ports
       run: |
-        # GitHub runner在境外，可直接作为探测点；业务端口全部连通即证明XrayR已恢复，无需SSH登录
-        for port in ${{ env.VERIFY_PORTS }}; do
-          if timeout 8 bash -c "echo > /dev/tcp/$NEW_IP/$port" 2>/dev/null; then
-            echo "Port $port is reachable on $NEW_IP"
-          else
-            echo "Port $port is NOT reachable on $NEW_IP"
-            exit 1
-          fi
+        # GitHub runner在境外，可直接作为探测点；server_status=ok后XrayR仍需1-3分钟启动，轮询而非一次定生死
+        ALL_OK=0
+        for attempt in $(seq 1 15); do
+          FAIL=0
+          for port in ${{ env.VERIFY_PORTS }}; do
+            if timeout 5 bash -c "echo > /dev/tcp/$NEW_IP/$port" 2>/dev/null; then
+              echo "Port $port OK (attempt $attempt)"
+            else
+              echo "Port $port NOT reachable yet (attempt $attempt)"
+              FAIL=1
+              break
+            fi
+          done
+          if [ "$FAIL" -eq 0 ]; then ALL_OK=1; break; fi
+          sleep 20
         done
+        if [ "$ALL_OK" -ne 1 ]; then
+          echo "Ports did not become reachable in time on $NEW_IP"
+          exit 1
+        fi
+
+    - name: Check New IP from China
+      if: steps.ping_check.outputs.pingable == 'false' && steps.resolve_instance.outcome == 'success' && steps.rebuild.outcome == 'success' && steps.verify_ports.outcome == 'success' && steps.china_check.outcome == 'success'
+      id: china_check
+      run: |
+        # 重建分到的IP可能是被回收的脏IP（以前在国内被封过），切换DNS前必须验证国内可达
+        API_URL="https://cn.apihz.cn/api/wangzhan/ping.php?id=10012112&key=11a27dd28291dc973616eaad85dc6279&host=$NEW_IP&type=1"
+        response=$(curl -sL "$API_URL")
+        echo "China ping $NEW_IP -> $response"
+        if [[ $response != *"\"code\": 200"* ]]; then
+          echo "New IP $NEW_IP NOT reachable from China. Destroying it and aborting (old instance untouched, next run will rebuild again)."
+          curl -s -o /dev/null -w "DELETE blocked new instance -> HTTP %{http_code}\n" -X DELETE \
+            "https://api.vultr.com/v2/instances/$NEW_INSTANCE_ID" \
+            -H "Authorization: Bearer ${ env.VULTR_API_KEY }"
+          curl -s -o /dev/null -w "DELETE snapshot -> HTTP %{http_code}\n" -X DELETE \
+            "https://api.vultr.com/v2/snapshots/$SNAP_ID" \
+            -H "Authorization: Bearer ${ env.VULTR_API_KEY }"
+          exit 1
+        fi
 
     - name: Get Cloudflare DNS Record ID
-      if: steps.ping_check.outputs.pingable == 'false' && steps.resolve_instance.outcome == 'success' && steps.verify_ports.outcome == 'success'
+      if: steps.ping_check.outputs.pingable == 'false' && steps.resolve_instance.outcome == 'success' && steps.verify_ports.outcome == 'success' && steps.china_check.outcome == 'success'
       run: |
         # 使用cURL调用Cloudflare API获取DNS记录ID
         DNS_RECORDS=$(curl -s -X GET "https://api.cloudflare.com/client/v4/zones/${{ env.CF_ZONE_ID }}/dns_records?name=${{ env.DOMAIN }}" \
@@ -159,7 +198,7 @@ jobs:
         fi
 
     - name: Update DNS Record
-      if: steps.ping_check.outputs.pingable == 'false' && steps.resolve_instance.outcome == 'success' && steps.verify_ports.outcome == 'success'
+      if: steps.ping_check.outputs.pingable == 'false' && steps.resolve_instance.outcome == 'success' && steps.verify_ports.outcome == 'success' && steps.china_check.outcome == 'success'
       id: update_dns
       run: |
         # 构建cURL请求命令，使用先前获取到的DNS_ID
