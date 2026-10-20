@@ -1,4 +1,4 @@
-name: Vultr Cleanup To Three
+name: Vultr Final Cleanup
 
 on:
   workflow_dispatch:
@@ -7,23 +7,24 @@ jobs:
   cleanup:
     runs-on: ubuntu-latest
     steps:
-      - name: Destroy confirmed-blocked candidates, keep 149.28 for user test
+      - name: Destroy candidate2 + verify final state
         run: |
           AUTH="Authorization: Bearer ${{ secrets.VULTR_API_KEY }}"
-          del() {
-            local id=$1 ip=$2
-            CHK=$(curl -s "https://api.vultr.com/v2/instances" -H "$AUTH" | jq -r --arg id "$id" '.instances[] | select(.id==$id) | .main_ip')
-            if [ "$CHK" == "$ip" ]; then
-              curl -s -o /dev/null -w "DELETE $id ($ip) -> HTTP %{http_code}\n" -X DELETE "https://api.vultr.com/v2/instances/$id" -H "$AUTH"
-            else
-              echo "SAFETY: $id IP mismatch (got $CHK, expect $ip), skip"
-            fi
-          }
-          echo "=== PRE ==="
-          curl -s "https://api.vultr.com/v2/instances" -H "$AUTH" | jq -r '.instances[] | "\(.id) | \(.label) | \(.main_ip)"'
-          # 92.171 和 87.161 均经 apihz 多上海节点确认被墙
-          del 37cea218-3096-45cb-a769-601f8b2bb14f 144.202.92.171
-          del df7b15c8-096e-409f-bc96-536631be4106 144.202.87.161
+          CHK=$(curl -s "https://api.vultr.com/v2/instances" -H "$AUTH" | jq -r '.instances[] | select(.id=="7cf888bd-cce4-4093-bfd9-050db910b476") | .main_ip')
+          if [ "$CHK" == "149.28.11.196" ]; then
+            curl -s -o /dev/null -w "DELETE candidate2 (149.28.11.196) -> HTTP %{http_code}\n" -X DELETE \
+              "https://api.vultr.com/v2/instances/7cf888bd-cce4-4093-bfd9-050db910b476" -H "$AUTH"
+          else
+            echo "SAFETY: candidate2 mismatch ($CHK), skip"
+          fi
+          for sid in $(curl -s "https://api.vultr.com/v2/snapshots" -H "$AUTH" | jq -r '.snapshots[]?.id'); do
+            curl -s -o /dev/null -w "DELETE leftover snapshot $sid -> HTTP %{http_code}\n" -X DELETE \
+              "https://api.vultr.com/v2/snapshots/$sid" -H "$AUTH"
+          done
           sleep 5
-          echo "=== POST ==="
+          echo "=== FINAL ==="
           curl -s "https://api.vultr.com/v2/instances" -H "$AUTH" | jq -r '.instances[] | "\(.id) | \(.label) | \(.main_ip)"'
+          echo "=== ports on 66.42.74.77 ==="
+          for p in 30071 30077 30083; do
+            timeout 5 bash -c "echo > /dev/tcp/66.42.74.77/$p" 2>/dev/null && echo "$p OK" || echo "$p FAIL"
+          done
