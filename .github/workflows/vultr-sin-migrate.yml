@@ -1,0 +1,16 @@
+name: Vultr SIN Migrate Temp
+on:
+  workflow_dispatch:
+jobs:
+  create:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Create SIN instance
+        run: |
+          RESP=$(curl -s -X POST "https://api.vultr.com/v2/instances" \
+            -H "Authorization: Bearer $VULTR_API_KEY" \
+            -H "Content-Type: application/json" \
+            -d '{"region":"sin","plan":"vhf-1c-1gb","os_id":2287,"label":"aws-india01-migrating","hostname":"aws-india01"}')
+          echo "$RESP" | jq .
+          echo "NEW_IP=$(echo "$RESP" | jq -r .instance.main_ip)"
+          echo "PASSWORD=$(echo "$RESP" | jq -r .instance.default_password)"
