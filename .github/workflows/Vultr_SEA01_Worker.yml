@@ -27,21 +27,28 @@ jobs:
     - name: Check Connectivity
       id: ping_check
       run: |
+
         API_URL="https://cn.apihz.cn/api/wangzhan/ping.php?id=10012112&key=11a27dd28291dc973616eaad85dc6279&host=${{env.DOMAIN}}&type=1"
-        response=$(curl -sL "$API_URL")
-        echo "${{ env.DOMAIN }} $response"
-        if [[ $response == *"\"code\": 200"* ]]; then
-          echo "Domain is pingable at $(date)"
-          echo "::set-output name=pingable::true"
+        # apihz 单探测点会误报（2026-10-21 对健康的 sgp 节点返回"未收到包"，本机/悉尼 ping 均正常）→ 3 次取多数
+        OK=0
+        for i in 1 2 3; do
+          response=$(curl -sL "$API_URL")
+          echo "probe $i: ${{ env.DOMAIN }} $response"
+          if [[ $response == *"\"code\": 200"* ]]; then OK=$((OK+1)); fi
+          sleep 3
+        done
+        echo "votes: $OK/3"
+        if [ "$OK" -ge 2 ]; then
+          echo "Domain is pingable (majority $OK/3) at $(date)"
+          echo "pingable=true" >> $GITHUB_OUTPUT
         else
-          echo "Domain is NOT pingable at $(date)"
-          echo "::set-output name=pingable::false"
+          echo "Domain is NOT pingable ($OK/3) at $(date)"
+          echo "pingable=false" >> $GITHUB_OUTPUT
         fi
         if [ "${{ github.event.inputs.force }}" == "true" ]; then
           echo "Force rebuild requested via workflow_dispatch"
-          echo "::set-output name=pingable::false"
+          echo "pingable=false" >> $GITHUB_OUTPUT
         fi
-
     - name: Resolve Instance ID by Label
       if: steps.ping_check.outputs.pingable == 'false'
       id: resolve_instance
@@ -166,21 +173,27 @@ jobs:
       if: steps.ping_check.outputs.pingable == 'false' && steps.resolve_instance.outcome == 'success' && steps.rebuild.outcome == 'success' && steps.verify_ports.outcome == 'success'
       id: china_check
       run: |
-        # 重建分到的IP可能是被回收的脏IP（以前在国内被封过），切换DNS前必须验证国内可达
+
+        # 重建分到的IP可能是被回收的脏IP，切DNS前必须验证国内可达；apihz 单点不可靠 → 3 次取多数
         API_URL="https://cn.apihz.cn/api/wangzhan/ping.php?id=10012112&key=11a27dd28291dc973616eaad85dc6279&host=$NEW_IP&type=1"
-        response=$(curl -sL "$API_URL")
-        echo "China ping $NEW_IP -> $response"
-        if [[ $response != *"\"code\": 200"* ]]; then
-          echo "New IP $NEW_IP NOT reachable from China. Destroying it and aborting (old instance untouched, next run will rebuild again)."
+        OK=0
+        for i in 1 2 3; do
+          response=$(curl -sL "$API_URL")
+          echo "China probe $i: $NEW_IP $response"
+          if [[ $response == *"\"code\": 200"* ]]; then OK=$((OK+1)); fi
+          sleep 3
+        done
+        echo "votes: $OK/3"
+        if [ "$OK" -lt 2 ]; then
+          echo "New IP $NEW_IP NOT reachable from China ($OK/3). Destroying it and aborting (old instance untouched, next run will rebuild again)."
           curl -s -o /dev/null -w "DELETE blocked new instance -> HTTP %{http_code}\n" -X DELETE \
             "https://api.vultr.com/v2/instances/$NEW_INSTANCE_ID" \
-            -H "Authorization: Bearer ${ env.VULTR_API_KEY }"
+            -H "Authorization: Bearer ${{ env.VULTR_API_KEY }}"
           curl -s -o /dev/null -w "DELETE snapshot -> HTTP %{http_code}\n" -X DELETE \
             "https://api.vultr.com/v2/snapshots/$SNAP_ID" \
-            -H "Authorization: Bearer ${ env.VULTR_API_KEY }"
+            -H "Authorization: Bearer ${{ env.VULTR_API_KEY }}"
           exit 1
         fi
-
     - name: Get Cloudflare DNS Record ID
       if: steps.ping_check.outputs.pingable == 'false' && steps.resolve_instance.outcome == 'success' && steps.verify_ports.outcome == 'success' && steps.china_check.outcome == 'success'
       run: |
