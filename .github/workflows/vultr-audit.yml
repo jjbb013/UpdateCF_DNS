@@ -1,57 +1,29 @@
-name: Vultr Candidate
+name: Vultr Cleanup To Three
 
 on:
   workflow_dispatch:
 
 jobs:
-  candidate:
+  cleanup:
     runs-on: ubuntu-latest
     steps:
-      - name: Create parking + candidate2 (92.171 occupied, next draws must differ)
+      - name: Destroy confirmed-blocked candidates, keep 149.28 for user test
         run: |
           AUTH="Authorization: Bearer ${{ secrets.VULTR_API_KEY }}"
-          del_inst() { curl -s -o /dev/null -w "DELETE $1 -> HTTP %{http_code}\n" -X DELETE "https://api.vultr.com/v2/instances/$1" -H "$AUTH"; }
-          wait_ok() {
-            local id=$1 name=$2
-            for i in $(seq 1 40); do
-              INST=$(curl -s "https://api.vultr.com/v2/instances/$id" -H "$AUTH")
-              IP=$(echo "$INST" | jq -r '.instance.main_ip')
-              ST=$(echo "$INST" | jq -r '.instance.server_status')
-              echo "$name: ip=$IP status=$ST" >&2
-              if [ -n "$IP" ] && [ "$IP" != "0.0.0.0" ] && [ "$IP" != "null" ] && [ "$ST" == "ok" ]; then echo "$IP"; return 0; fi
-              sleep 15
-            done
-            return 1
+          del() {
+            local id=$1 ip=$2
+            CHK=$(curl -s "https://api.vultr.com/v2/instances" -H "$AUTH" | jq -r --arg id "$id" '.instances[] | select(.id==$id) | .main_ip')
+            if [ "$CHK" == "$ip" ]; then
+              curl -s -o /dev/null -w "DELETE $id ($ip) -> HTTP %{http_code}\n" -X DELETE "https://api.vultr.com/v2/instances/$id" -H "$AUTH"
+            else
+              echo "SAFETY: $id IP mismatch (got $CHK, expect $ip), skip"
+            fi
           }
-
-          BODY=$(curl -s "https://api.vultr.com/v2/instances" -H "$AUTH")
-          echo "=== current ==="; echo "$BODY" | jq -r '.instances[] | "\(.id) | \(.label) | \(.main_ip)"'
-          # 清旧 parking（保留 candidate=92.171 占位）
-          for pid in $(echo "$BODY" | jq -r '.instances[] | select(.label=="ip-parking") | .id'); do del_inst $pid; done
-
-          SNAP_ID=$(curl -s "https://api.vultr.com/v2/snapshots" -H "$AUTH" | jq -r '.snapshots[0]?.id // empty')
-          echo "snapshot: $SNAP_ID"
-          [ -n "$SNAP_ID" ] || { echo "no snapshot!"; exit 1; }
-
-          mk() { curl -s -X POST "https://api.vultr.com/v2/instances" -H "$AUTH" -H "Content-Type: application/json" \
-            --data-raw "{\"region\":\"sea\",\"plan\":\"vhf-1c-1gb\",\"snapshot_id\":\"$SNAP_ID\",\"label\":\"$2\"}" | jq -r '.instance.id'; }
-
-          P_ID=$(mk x ip-parking); echo "parking: $P_ID"
-          P_IP=$(wait_ok $P_ID parking) || { echo "parking failed"; exit 1; }
-          echo "PARKING_IP=$P_IP"
-
-          C_ID=$(mk x candidate2); echo "candidate2: $C_ID"
-          C_IP=$(wait_ok $C_ID candidate2) || { echo "candidate2 failed"; del_inst $P_ID; exit 1; }
-          echo "CANDIDATE2_IP=$C_IP"
-
-          for ip in $P_IP $C_IP; do
-            OK=0
-            for a in $(seq 1 20); do
-              F=0
-              for p in 30071 30077 30083; do timeout 5 bash -c "echo > /dev/tcp/$ip/$p" 2>/dev/null || { F=1; break; }; done
-              [ "$F" -eq 0 ] && { OK=1; break; }
-              sleep 15
-            done
-            echo "PORTS $ip -> $([ $OK == 1 ] && echo OK || echo FAIL)"
-          done
-          echo "READY: parking=$P_ID@$P_IP candidate2=$C_ID@$C_IP (candidate=92.171 occupied) 请用户国内测试后指定用哪台"
+          echo "=== PRE ==="
+          curl -s "https://api.vultr.com/v2/instances" -H "$AUTH" | jq -r '.instances[] | "\(.id) | \(.label) | \(.main_ip)"'
+          # 92.171 和 87.161 均经 apihz 多上海节点确认被墙
+          del 37cea218-3096-45cb-a769-601f8b2bb14f 144.202.92.171
+          del df7b15c8-096e-409f-bc96-536631be4106 144.202.87.161
+          sleep 5
+          echo "=== POST ==="
+          curl -s "https://api.vultr.com/v2/instances" -H "$AUTH" | jq -r '.instances[] | "\(.id) | \(.label) | \(.main_ip)"'
