@@ -1,0 +1,45 @@
+name: Terminate India EC2 (temp)
+on:
+  workflow_dispatch:
+jobs:
+  terminate:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: aws-actions/configure-aws-credentials@v4
+      with:
+        aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID_AP_SOUTH_1 }}
+        aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY_AP_SOUTH_1 }}
+        aws-region: ap-south-1
+    - run: |
+        set -e
+        IID=i-07b6072b7af1ba99a
+        echo "=== BEFORE ==="
+        aws ec2 describe-instances --region ap-south-1 --instance-ids $IID --query 'Reservations[*].Instances[*].[InstanceId,State.Name,PublicIpAddress,Tags]' --output json
+        echo "=== VOLUMES ATTACHED ==="
+        VOLS=$(aws ec2 describe-volumes --region ap-south-1 --filters Name=attachment.instance-id,Values=$IID --query 'Volumes[*].VolumeId' --output text)
+        echo "volumes=$VOLS"
+        echo "=== ELASTIC IPs ON INSTANCE ==="
+        EIPS=$(aws ec2 describe-addresses --region ap-south-1 --filters Name=instance-id,Values=$IID --query 'Addresses[*].AllocationId' --output text)
+        echo "allocation_ids=$EIPS"
+        echo "=== REMOVE TERMINATION PROTECTION (if any) ==="
+        aws ec2 modify-instance-attribute --region ap-south-1 --instance-id $IID --no-disable-api-termination 2>/dev/null && echo "protection removed" || echo "no protection or already off"
+        echo "=== TERMINATE ==="
+        aws ec2 terminate-instances --region ap-south-1 --instance-ids $IID
+        aws ec2 wait instance-terminated --region ap-south-1 --instance-ids $IID
+        echo "instance terminated"
+        echo "=== RELEASE ELASTIC IPs ==="
+        for AID in $EIPS; do
+          aws ec2 release-address --region ap-south-1 --allocation-id $AID && echo "released $AID"
+        done
+        echo "=== DELETE ORPHAN VOLUMES (if any) ==="
+        for V in $VOLS; do
+          aws ec2 wait volume-available --region ap-south-1 --volume-ids $V 2>/dev/null || true
+          aws ec2 delete-volume --region ap-south-1 --volume-id $V 2>/dev/null && echo "deleted volume $V" || echo "volume $V already gone or delete-on-termination"
+        done
+        echo "=== AFTER: all non-terminated instances ==="
+        aws ec2 describe-instances --region ap-south-1 --filters Name=instance-state-name,Values=pending,running,stopping,stopped --query 'Reservations[*].Instances[*].[InstanceId,State.Name]' --output text
+        echo "=== remaining addresses ==="
+        aws ec2 describe-addresses --region ap-south-1 --query 'Addresses[*].[PublicIp,AllocationId,InstanceId]' --output text
+        echo "=== remaining volumes ==="
+        aws ec2 describe-volumes --region ap-south-1 --filters Name=status,Values=available --query 'Volumes[*].[VolumeId,Size]' --output text
+        echo "=== DONE ==="
