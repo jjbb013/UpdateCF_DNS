@@ -1,0 +1,15 @@
+name: Query Instance State (temp)
+on:
+  workflow_dispatch:
+jobs:
+  query:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: aws-actions/configure-aws-credentials@v4
+      with:
+        aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID_AP_SOUTH_1 }}
+        aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY_AP_SOUTH_1 }}
+        aws-region: ap-south-1
+    - run: |
+        aws ec2 describe-instances --region ap-southeast-1 --instance-ids i-0dff0d04dc8207c29 --query 'Reservations[*].Instances[*].[InstanceId,State.Name,PublicIpAddress,InstanceType,LaunchTime]' --output table
+        aws ec2 describe-instances --region ap-south-1 --filters Name=instance-state-name,Values=pending,running,stopping,stopped --query 'Reservations[*].Instances[*].[InstanceId,State.Name,Placement.AvailabilityZone]' --output table
