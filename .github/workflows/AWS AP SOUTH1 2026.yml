@@ -1,7 +1,7 @@
 name: +AWS AP SOUTH1(印度) 2026 wpan001
 on:
-  schedule:
-    - cron: '0 */3 * * *' # 每3小时执行一次
+  # schedule:  # 2026-10-22 停用：实例 i-07b6072b7af1ba99a 已删除，保留手动触发
+  #   - cron: '0 */3 * * *' # 每3小时执行一次
   workflow_dispatch:
 
 env:
