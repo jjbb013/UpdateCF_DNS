@@ -1,0 +1,12 @@
+name: Query CF Record (temp)
+on:
+  workflow_dispatch:
+jobs:
+  query:
+    runs-on: ubuntu-latest
+    steps:
+    - run: |
+        echo "=== aws.ap-south1 record ==="
+        curl -s "https://api.cloudflare.com/client/v4/zones/1fa9774064820f53fe1733e37a19f721/dns_records?type=A&name=aws.ap-south1.onemorething.pp.ua" -H "Authorization: Bearer ${{ secrets.CF_API_TOKEN }}" | python3 -m json.tool
+        echo "=== all aws.* records ==="
+        curl -s "https://api.cloudflare.com/client/v4/zones/1fa9774064820f53fe1733e37a19f721/dns_records?type=A&per_page=100" -H "Authorization: Bearer ${{ secrets.CF_API_TOKEN }}" | python3 -c "import json,sys; d=json.load(sys.stdin); [print(r['name'],r['content'],r['proxied']) for r in d.get('result',[])]"
