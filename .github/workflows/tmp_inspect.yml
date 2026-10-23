@@ -1,0 +1,23 @@
+name: TMP Inspect wpan001
+on:
+  workflow_dispatch:
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    steps:
+    - name: Configure AWS Credentials
+      uses: aws-actions/configure-aws-credentials@v1
+      with:
+        aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID_AP_SOUTH_1 }}
+        aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY_AP_SOUTH_1 }}
+        aws-region: ap-south-1
+    - name: Describe both instances
+      run: |
+        echo "=== i-07b6072b7af1ba99a (ap-south-1) ==="
+        aws ec2 describe-instances --instance-ids i-07b6072b7af1ba99a --region ap-south-1 --query 'Reservations[].Instances[].{ID:InstanceId,State:State.Name,Type:InstanceType,LaunchTime:LaunchTime}' --output json 2>&1 || true
+        echo "=== i-0dff0d04dc8207c29 (ap-southeast-1) ==="
+        aws ec2 describe-instances --instance-ids i-0dff0d04dc8207c29 --region ap-southeast-1 --query 'Reservations[].Instances[].{ID:InstanceId,State:State.Name,Type:InstanceType,LaunchTime:LaunchTime}' --output json 2>&1 || true
+        echo "=== all running instances in both regions ==="
+        aws ec2 describe-instances --region ap-south-1 --filters Name=instance-state-name,Values=running,pending,stopping,stopped --query 'Reservations[].Instances[].{ID:InstanceId,State:State.Name}' --output json 2>&1 || true
+        aws ec2 describe-instances --region ap-southeast-1 --filters Name=instance-state-name,Values=running,pending,stopping,stopped --query 'Reservations[].Instances[].{ID:InstanceId,State:State.Name}' --output json 2>&1 || true
+        echo "=== done ==="
