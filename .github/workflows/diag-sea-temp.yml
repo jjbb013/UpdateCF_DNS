@@ -1,0 +1,20 @@
+name: Diagnose SEA Node (temp)
+on:
+  workflow_dispatch:
+jobs:
+  diag:
+    runs-on: ubuntu-latest
+    steps:
+    - name: apihz control test
+      run: |
+        API="https://cn.apihz.cn/api/wangzhan/ping.php?id=10012112&key=11a27dd28291dc973616eaad85dc6279"
+        for HOST in 45.76.144.37 207.148.81.3 149.28.11.196 kkk.onemorething.pp.ua www.baidu.com; do
+          echo "--- apihz ping $HOST x2 ---"
+          for i in 1 2; do curl -sL "$API&host=$HOST&type=1"; echo; sleep 2; done
+        done
+    - name: TCP from runner
+      run: |
+        for T in "149.28.11.196 22" "149.28.11.196 30071" "149.28.11.196 30083" "45.76.144.37 1081" "45.76.144.37 22"; do
+          set -- $T
+          if timeout 5 bash -c "echo > /dev/tcp/$1/$2" 2>/dev/null; then echo "TCP $1:$2 OPEN"; else echo "TCP $1:$2 FAIL"; fi
+        done
