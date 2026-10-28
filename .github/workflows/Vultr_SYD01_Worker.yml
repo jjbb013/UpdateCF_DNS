@@ -28,21 +28,30 @@ jobs:
       id: ping_check
       run: |
 
-        API_URL="https://cn.apihz.cn/api/wangzhan/ping.php?id=10012112&key=11a27dd28291dc973616eaad85dc6279&host=${{env.DOMAIN}}&type=1"
-        # apihz 单探测点会误报（2026-10-21 对健康的 sgp 节点返回"未收到包"，本机/悉尼 ping 均正常）→ 3 次取多数
+        # 2026-10-28 修复：同 SEA01——节点不落 ICMP，apihz ICMP 判定"不通"为误报，曾导致无效重建循环。
+        # 改为 runner 直连 TCP 探测业务端口，3 轮取多数。
         OK=0
         for i in 1 2 3; do
-          response=$(curl -sL "$API_URL")
-          echo "probe $i: ${{ env.DOMAIN }} $response"
-          if [[ $response == *"\"code\": 200"* ]]; then OK=$((OK+1)); fi
-          sleep 3
+          FAIL=0
+          for port in ${{ env.VERIFY_PORTS }}; do
+            if ! timeout 5 bash -c "echo > /dev/tcp/${{ env.DOMAIN }}/$port" 2>/dev/null; then
+              echo "probe $i: port $port NOT reachable"
+              FAIL=1
+              break
+            fi
+          done
+          if [ "$FAIL" -eq 0 ]; then
+            echo "probe $i: ports OK"
+            OK=$((OK+1))
+          fi
+          sleep 2
         done
         echo "votes: $OK/3"
         if [ "$OK" -ge 2 ]; then
-          echo "Domain is pingable (majority $OK/3) at $(date)"
+          echo "Domain service ports reachable (majority $OK/3) at $(date)"
           echo "pingable=true" >> $GITHUB_OUTPUT
         else
-          echo "Domain is NOT pingable ($OK/3) at $(date)"
+          echo "Domain service ports NOT reachable ($OK/3) at $(date)"
           echo "pingable=false" >> $GITHUB_OUTPUT
         fi
         if [ "${{ github.event.inputs.force }}" == "true" ]; then
@@ -174,26 +183,17 @@ jobs:
       id: china_check
       run: |
 
-        # 重建分到的IP可能是被回收的脏IP，切DNS前必须验证国内可达；apihz 单点不可靠 → 3 次取多数
+        # 2026-10-28 起仅参考、不再阻塞切换：节点不落 ICMP，ICMP 验收曾导致每轮重建都"验证失败"回滚。
+        # ICMP 通断不能证明 TCP 业务可达性/被墙（需国内 TCP 拨测点）。原回滚逻辑已移除。
         API_URL="https://cn.apihz.cn/api/wangzhan/ping.php?id=10012112&key=11a27dd28291dc973616eaad85dc6279&host=$NEW_IP&type=1"
         OK=0
         for i in 1 2 3; do
           response=$(curl -sL "$API_URL")
-          echo "China probe $i: $NEW_IP $response"
+          echo "China ICMP probe $i (informational): $NEW_IP $response"
           if [[ $response == *"\"code\": 200"* ]]; then OK=$((OK+1)); fi
           sleep 3
         done
-        echo "votes: $OK/3"
-        if [ "$OK" -lt 2 ]; then
-          echo "New IP $NEW_IP NOT reachable from China ($OK/3). Destroying it and aborting (old instance untouched, next run will rebuild again)."
-          curl -s -o /dev/null -w "DELETE blocked new instance -> HTTP %{http_code}\n" -X DELETE \
-            "https://api.vultr.com/v2/instances/$NEW_INSTANCE_ID" \
-            -H "Authorization: Bearer ${{ env.VULTR_API_KEY }}"
-          curl -s -o /dev/null -w "DELETE snapshot -> HTTP %{http_code}\n" -X DELETE \
-            "https://api.vultr.com/v2/snapshots/$SNAP_ID" \
-            -H "Authorization: Bearer ${{ env.VULTR_API_KEY }}"
-          exit 1
-        fi
+        echo "China ICMP votes: $OK/3 (informational only, NOT blocking DNS switch)"
     - name: Get Cloudflare DNS Record ID
       if: steps.ping_check.outputs.pingable == 'false' && steps.resolve_instance.outcome == 'success' && steps.verify_ports.outcome == 'success' && steps.china_check.outcome == 'success'
       run: |
