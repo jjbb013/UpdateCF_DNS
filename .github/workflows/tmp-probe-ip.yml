@@ -1,0 +1,19 @@
+name: tmp-probe-ip
+on:
+  workflow_dispatch:
+    inputs:
+      ip:
+        required: true
+        type: string
+      ports:
+        required: true
+        type: string
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    steps:
+      - name: tcp probe from overseas runner
+        run: |
+          IFS=',' read -ra PS <<< "${{ inputs.ports }}"
+          for p in "${PS[@]}"; do timeout 6 bash -c "echo > /dev/tcp/${{ inputs.ip }}/$p" 2>/dev/null && echo "$p OPEN" || echo "$p FAIL"; done
+          echo PROBE_DONE
