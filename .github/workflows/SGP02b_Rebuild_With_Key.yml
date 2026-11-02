@@ -30,7 +30,7 @@ jobs:
       run: |
         RESP=$(curl -s -X POST "https://api.vultr.com/v2/instances" \
           -H "Authorization: Bearer $VULTR_API_KEY" -H "Content-Type: application/json" \
-          --data-raw '{"region":"${{ env.REGION }}","plan":"${{ env.PLAN }}","os_id":${{ env.OS_ID }},"label":"${{ env.LABEL }}","hostname":"${{ env.LABEL }}","sshkey_id":"'$(cat /tmp/key_id)'"}')
+          --data-raw '{"region":"${{ env.REGION }}","plan":"${{ env.PLAN }}","os_id":${{ env.OS_ID }},"label":"${{ env.LABEL }}","hostname":"${{ env.LABEL }}","sshkey_id":["'$(cat /tmp/key_id)'"]}')
         echo "$RESP" | jq -r '.instance.id' > /tmp/new_id
         echo "create:"; echo "$RESP" | jq -r '.instance | {id, status, region}'
         if [ "$(cat /tmp/new_id)" == "null" ]; then echo "$RESP"; exit 1; fi
