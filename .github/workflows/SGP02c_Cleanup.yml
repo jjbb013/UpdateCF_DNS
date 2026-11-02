@@ -1,0 +1,32 @@
+name: SGP02c_Cleanup
+on:
+  workflow_dispatch:
+env:
+  OLD_INSTANCE_ID: e938a81b-3fca-4bdd-bd12-8dee6bc30db3
+  VULTR_API_KEY: ${{ secrets.VULTR_API_KEY }}
+permissions:
+  contents: write
+jobs:
+  cleanup:
+    runs-on: ubuntu-latest
+    steps:
+    - name: Destroy Tokyo drifted instance
+      run: |
+        curl -s -X DELETE "https://api.vultr.com/v2/instances/${{ env.OLD_INSTANCE_ID }}" \
+          -H "Authorization: Bearer $VULTR_API_KEY" -o /dev/null -w "destroy tokyo: %{http_code}\n"
+        sleep 8
+    - name: Verify instance list
+      run: |
+        curl -s "https://api.vultr.com/v2/instances" -H "Authorization: Bearer $VULTR_API_KEY" \
+          | jq -r '.instances[] | "\(.id) \(.label) \(.region) \(.main_ip)"'
+    - name: Delete temp workflow files
+      run: |
+        for f in SGP02_Manual_Rebuild.yml SGP02b_Rebuild_With_Key.yml vultr-sin-migrate.yml SGP02c_Cleanup.yml; do
+          SHA=$(gh api "repos/${{ github.repository }}/contents/.github/workflows/$f" --jq '.sha' 2>/dev/null || echo "")
+          if [ -n "$SHA" ]; then
+            gh api "repos/${{ github.repository }}/contents/.github/workflows/$f" -X DELETE \
+              -f message="cleanup: remove temp workflow $f" -f sha="$SHA" && echo "deleted: $f"
+          fi
+        done
+      env:
+        GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
