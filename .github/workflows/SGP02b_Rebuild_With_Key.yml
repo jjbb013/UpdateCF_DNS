@@ -20,7 +20,7 @@ jobs:
           --data-raw "{\"name\":\"sgp02-tmp\",\"ssh_key\":\"${{ env.PUBKEY }}\"}")
         echo "$RESP" | jq -r '.ssh_key.id' > /tmp/key_id
         echo "key_id=$(cat /tmp/key_id)"
-        [ "$(cat /tmp/key_id)" == "null" ] && exit 1
+        if [ "$(cat /tmp/key_id)" == "null" ]; then echo "key register failed: $RESP"; exit 1; fi
     - name: Destroy no-password instance
       run: |
         curl -s -X DELETE "https://api.vultr.com/v2/instances/${{ env.BAD_INSTANCE_ID }}" \
@@ -33,7 +33,7 @@ jobs:
           --data-raw '{"region":"${{ env.REGION }}","plan":"${{ env.PLAN }}","os_id":${{ env.OS_ID }},"label":"${{ env.LABEL }}","hostname":"${{ env.LABEL }}","sshkey_id":"'$(cat /tmp/key_id)'"}')
         echo "$RESP" | jq -r '.instance.id' > /tmp/new_id
         echo "create:"; echo "$RESP" | jq -r '.instance | {id, status, region}'
-        [ "$(cat /tmp/new_id)" == "null" ] && { echo "$RESP"; exit 1; }
+        if [ "$(cat /tmp/new_id)" == "null" ]; then echo "$RESP"; exit 1; fi
     - name: Wait for IP + verify region
       run: |
         NEW_IP="0.0.0.0"; REGION=""
