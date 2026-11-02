@@ -72,7 +72,9 @@ jobs:
           echo "$BODY"
           exit 1
         fi
-        MATCHES=$(echo "$BODY" | jq -r '.instances[]? | select(.label=="${{ env.LABEL }}" and .region=="${{ env.REGION }}") | .id')
+        MATCHES=$(echo "$BODY" | jq -r '.instances[]? | select(.label=="${{ env.LABEL }}") | .id')
+        ACTUAL_REGION=$(echo "$BODY" | jq -r '.instances[]? | select(.label=="${{ env.LABEL }}") | .region' | head -1)
+        echo "Resolved region: $ACTUAL_REGION (env REGION=${{ env.REGION }})"
         COUNT=$(echo "$MATCHES" | grep -c . || true)
         if [ "$COUNT" -ne 1 ]; then
           echo "Expected exactly 1 instance with label=${{ env.LABEL }} region=${{ env.REGION }}, found $COUNT"
