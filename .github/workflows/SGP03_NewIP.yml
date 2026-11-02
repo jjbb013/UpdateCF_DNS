@@ -1,0 +1,64 @@
+name: SGP03_NewIP
+on:
+  workflow_dispatch:
+    inputs:
+      region:
+        description: 'Target region (e.g. sgp, mel, yto)'
+        required: true
+        default: 'sgp'
+env:
+  VULTR_API_KEY: ${{ secrets.VULTR_API_KEY }}
+  PUBKEY: 'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIMwRdewixgchniDqZgohnKseNIuEbtTZv+YoeLcVgjtL sgp03-swap'
+jobs:
+  create:
+    runs-on: ubuntu-latest
+    steps:
+    - name: Register temp SSH key
+      id: regkey
+      run: |
+        RESP=$(curl -s -X POST "https://api.vultr.com/v2/ssh-keys" \
+          -H "Authorization: Bearer $VULTR_API_KEY" -H "Content-Type: application/json" \
+          -d "{\"name\":\"sgp03-tmp-$(date +%s)\",\"ssh_key\":\"$PUBKEY\"}")
+        echo "$RESP" | jq .
+        KEY_ID=$(echo "$RESP" | jq -r '.ssh_key.id')
+        if [ "$KEY_ID" == "null" ] || [ -z "$KEY_ID" ]; then echo "key register failed"; exit 1; fi
+        echo "key_id=$KEY_ID" >> "$GITHUB_OUTPUT"
+    - name: Create instance (retry if region mismatch)
+      id: create
+      run: |
+        CREATED_ID=""
+        for attempt in 1 2 3; do
+          RESP=$(curl -s -X POST "https://api.vultr.com/v2/instances" \
+            -H "Authorization: Bearer $VULTR_API_KEY" -H "Content-Type: application/json" \
+            -d "{\"region\":\"${{ inputs.region }}\",\"plan\":\"vhf-1c-1gb\",\"os_id\":2284,\"label\":\"aws-india01-new\",\"sshkey_id\":[\"${{ steps.regkey.outputs.key_id }}\"],\"hostname\":\"aws-india01-new\"}")
+          echo "$RESP" | jq .
+          CREATED_ID=$(echo "$RESP" | jq -r '.instance.id')
+          ACTUAL_REGION=$(echo "$RESP" | jq -r '.instance.region')
+          if [ "$ACTUAL_REGION" == "${{ inputs.region }}" ]; then
+            echo "region OK: $ACTUAL_REGION"
+            break
+          else
+            echo "REGION MISMATCH: wanted ${{ inputs.region }} got $ACTUAL_REGION — destroying $CREATED_ID and retrying"
+            curl -s -X DELETE "https://api.vultr.com/v2/instances/$CREATED_ID" -H "Authorization: Bearer $VULTR_API_KEY" -o /dev/null -w "destroy: %{http_code}\n"
+            sleep 10
+            CREATED_ID=""
+          fi
+        done
+        if [ -z "$CREATED_ID" ]; then echo "failed to get instance in ${{ inputs.region }}"; exit 1; fi
+        echo "instance_id=$CREATED_ID" >> "$GITHUB_OUTPUT"
+    - name: Poll until active
+      run: |
+        for i in $(seq 1 30); do
+          ST=$(curl -s "https://api.vultr.com/v2/instances/${{ steps.create.outputs.instance_id }}" -H "Authorization: Bearer $VULTR_API_KEY" | jq -r '.instance.status,.instance.main_ip' | paste -sd' ' -)
+          echo "poll $i: $ST"
+          echo "$ST" | grep -q "^active" && break
+          sleep 10
+        done
+        echo "$ST" | grep -q "^active" || exit 1
+    - name: Show result
+      run: |
+        curl -s "https://api.vultr.com/v2/instances/${{ steps.create.outputs.instance_id }}" -H "Authorization: Bearer $VULTR_API_KEY" | jq -r '.instance | "ID: \(.id)\nIP: \(.main_ip)\nRegion: \(.region)\nLabel: \(.label)"'
+    - name: Delete temp SSH key
+      if: always()
+      run: |
+        curl -s -X DELETE "https://api.vultr.com/v2/ssh-keys/${{ steps.regkey.outputs.key_id }}" -H "Authorization: Bearer $VULTR_API_KEY" -o /dev/null -w "key delete: %{http_code}\n"
