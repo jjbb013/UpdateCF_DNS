@@ -3,6 +3,11 @@ on:
   schedule:
     - cron: '0 */3 * * *' # 每3小时执行一次
   workflow_dispatch:
+    inputs:
+      force:
+        description: 'force IP swap regardless of ping result'
+        required: false
+        default: ''
 
 env:
   INSTANCE_ID: i-0dff0d04dc8207c29
@@ -34,6 +39,10 @@ jobs:
           echo "::set-output name=pingable::true"
         else
           echo "Domain is NOT pingable at $(date)"
+          echo "::set-output name=pingable::false"
+        fi
+        if [ "${{ github.event.inputs.force }}" = "true" ]; then
+          echo "FORCE swap requested via dispatch input"
           echo "::set-output name=pingable::false"
         fi
 
